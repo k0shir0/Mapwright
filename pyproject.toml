@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cli-anything-hammerplusplus"
+version = "0.1.0"
+description = "Local CLI and MCP tools for legacy CS:GO Hammer++ mapping"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.optional-dependencies]
+mcp = ["mcp>=1.26,<2"]
+verify = ["srctools>=2.6,<3"]
+
+[project.scripts]
+hammer-agent = "cli_anything.hammerplusplus.cli:main"
+cli-anything-hammerplusplus = "cli_anything.hammerplusplus.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["cli_anything*"]
+namespaces = true
