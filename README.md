@@ -50,6 +50,11 @@ directory. Every map and generated artifact stays inside that workspace.
 tools and operation fields. JSON is the default output; `--json` makes it
 compact. A failed command exits 1 with `ok: false`.
 
+Imported VMFs can reuse IDs across entity/world, solid, side and group
+namespaces. For ambiguous IDs, use `object PATH ID --kind solid` or add
+`"kind": "solid"` to the edit operation. `add_output` infers entity kind;
+`add_box` can qualify its parent with `parent_kind`. Imported IDs are retained.
+
 | Command | Purpose |
 | --- | --- |
 | `doctor` | Inspect configuration, Steam candidates and SDK readiness |

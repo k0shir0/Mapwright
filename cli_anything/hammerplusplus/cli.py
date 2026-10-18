@@ -51,6 +51,11 @@ def parser():
     obj = commands.add_parser("object", help="Inspect an object and its VMF source")
     obj.add_argument("path")
     obj.add_argument("id", type=int)
+    obj.add_argument(
+        "--kind",
+        choices=["world", "entity", "solid", "side", "group"],
+        default=argparse.SUPPRESS,
+    )
     for command in ("validate", "history", "editor-open"):
         sub = commands.add_parser(command)
         sub.add_argument("path")

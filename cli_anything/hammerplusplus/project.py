@@ -98,9 +98,9 @@ class Project:
             **vmf.inspect(text, offset, limit),
         }
 
-    def object(self, name: str, object_id: int) -> dict:
+    def object(self, name: str, object_id: int, kind: str | None = None) -> dict:
         _, data, text, _ = self.read(name)
-        node = vmf.find_id(vmf.parse(text), object_id)
+        node = vmf.find_id(vmf.parse(text), object_id, kind)
         return {
             "revision": digest(data),
             **vmf.describe(node),

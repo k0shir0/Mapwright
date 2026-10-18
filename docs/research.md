@@ -68,3 +68,12 @@ The implementation uses the documented
 as its authoring boundary. This work did not discover or verify a live
 Hammer++ editing protocol. Future live integration needs exact-build evidence
 and actual editor tests; no offsets or unsupported command IDs are assumed.
+
+## Bridge integration checks
+
+The bridge itself successfully invoked the local REA CLI against the archive
+executable and returned its canonical Evidence. Its asset catalog queried the
+installed CS:GO VPK directories and located `dev/dev_measuregeneric01` and
+`dev/dev_measuregeneric01b` in `pak01_dir.vpk`; no assets were extracted.
+The generated test-room material therefore exists in the inspected local
+content. This is an inventory check, not a texture-rendering test.
