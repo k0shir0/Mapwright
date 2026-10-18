@@ -135,7 +135,14 @@ def vector(value: Any, length: int = 3) -> list[float]:
 
 
 def fmt(values) -> str:
-    return " ".join(f"{v:g}" for v in values)
+    return " ".join(format(v, ".17g") for v in values)
+
+
+def position(value: Any) -> list[float]:
+    result = vector(value)
+    if any(abs(v) > 32768 for v in result):
+        raise MapError("Position exceeds Source coordinate bounds")
+    return result
 
 
 def block(name: str, properties: dict[str, Any], children: str = "") -> str:
@@ -210,12 +217,28 @@ def new_map() -> str:
     )
 
 
-def find_id(root: Node, object_id: int) -> Node:
+def find_id(
+    root: Node, object_id: int, kind: str | None = None, *, allowed=None
+) -> Node:
     if isinstance(object_id, bool) or not isinstance(object_id, int):
         raise MapError("id must be an integer")
+    kinds = set(allowed or ("world", "entity", "solid", "side", "group"))
+    if kind is not None:
+        if kind not in kinds:
+            raise MapError(f"Expected kind from {sorted(kinds)}")
+        kinds = {kind}
     matches = [
-        n for n in root.walk() if n.value is None and n.get("id") == str(object_id)
+        n
+        for n in root.walk()
+        if n.value is None
+        and n.key in kinds
+        and n.get("id").isdecimal()
+        and int(n.get("id")) == object_id
     ]
+    if len(matches) > 1 and len({n.key for n in matches}) > 1:
+        raise MapError(
+            f"Ambiguous id {object_id}; specify kind from {sorted({n.key for n in matches})}"
+        )
     if len(matches) != 1:
         raise MapError(f"Expected one object with id {object_id}, found {len(matches)}")
     return matches[0]
@@ -274,16 +297,16 @@ def mutate(text: str, operation: dict) -> tuple[str, dict]:
     root = parse(text)
     op = operation.get("op")
     fields = {
-        "add_box": ({"min", "max"}, {"material", "parent_id"}),
+        "add_box": ({"min", "max"}, {"material", "parent_id", "parent_kind"}),
         "add_room": ({"min", "max"}, {"material", "thickness"}),
         "add_entity": ({"classname", "origin"}, {"properties"}),
-        "set_properties": ({"id", "properties"}, set()),
+        "set_properties": ({"id", "properties"}, {"kind"}),
         "add_output": (
             {"id", "event", "target", "input"},
             {"parameter", "delay", "times"},
         ),
-        "translate": ({"id", "delta"}, set()),
-        "delete": ({"id"}, set()),
+        "translate": ({"id", "delta"}, {"kind"}),
+        "delete": ({"id"}, {"kind"}),
     }
     if op not in fields:
         raise MapError(f"Unknown operation: {op}")
@@ -298,8 +321,17 @@ def mutate(text: str, operation: dict) -> tuple[str, dict]:
         raise MapError("VMF must have exactly one world")
     world = worlds[0]
     if op == "add_box":
+        if "parent_kind" in operation and "parent_id" not in operation:
+            raise MapError("parent_kind requires parent_id")
         parent = (
-            find_id(root, operation["parent_id"]) if "parent_id" in operation else world
+            find_id(
+                root,
+                operation["parent_id"],
+                operation.get("parent_kind"),
+                allowed=("world", "entity"),
+            )
+            if "parent_id" in operation
+            else world
         )
         if parent.key not in ("world", "entity"):
             raise MapError("Box parent must be world or entity")
@@ -368,7 +400,7 @@ def mutate(text: str, operation: dict) -> tuple[str, dict]:
             {
                 "id": oid,
                 "classname": classname,
-                "origin": fmt(vector(operation["origin"])),
+                "origin": fmt(position(operation["origin"])),
                 **properties,
             },
             block(
@@ -377,7 +409,16 @@ def mutate(text: str, operation: dict) -> tuple[str, dict]:
             ),
         )
         return insert(text, root, addition), {"op": op, "ids": [oid]}
-    node = find_id(root, operation["id"])
+    allowed = (
+        ("entity",)
+        if op == "add_output"
+        else (
+            ("solid", "entity")
+            if op in ("translate", "delete")
+            else ("world", "entity", "solid", "side")
+        )
+    )
+    node = find_id(root, operation["id"], operation.get("kind"), allowed=allowed)
     if op == "set_properties":
         props = operation["properties"]
         if (
@@ -422,7 +463,7 @@ def mutate(text: str, operation: dict) -> tuple[str, dict]:
             or times < -1
         ):
             raise MapError("Output delay must be nonnegative, times an integer >= -1")
-        prop = f'\t{quote(event)} {quote(f"{target},{inp},{parameter},{delay:g},{times}")}\n'
+        prop = f'\t{quote(event)} {quote(f"{target},{inp},{parameter},{fmt([delay])},{times}")}\n'
         connections = node.blocks("connections")
         return insert(
             text,
@@ -438,7 +479,15 @@ def mutate(text: str, operation: dict) -> tuple[str, dict]:
         }
     if node.key not in ("entity", "solid"):
         raise MapError("Translate requires a solid or entity")
-    if any(n.key in ("dispinfo", "overlaydata") for n in node.walk()) or node.get(
+
+    def contained_solids(parent: Node):
+        yield from parent.blocks("solid")
+        for hidden in parent.blocks("hidden"):
+            yield from contained_solids(hidden)
+
+    solids = [node] if node.key == "solid" else list(contained_solids(node))
+    sides = [side for solid in solids for side in solid.blocks("side")]
+    if any(side.blocks("dispinfo") for side in sides) or node.get(
         "classname"
     ).startswith(("info_overlay", "func_instance")):
         raise MapError(
@@ -446,9 +495,11 @@ def mutate(text: str, operation: dict) -> tuple[str, dict]:
         )
     delta = vector(operation["delta"])
     changes = []
-    for prop in node.walk():
-        if prop.value is None:
-            continue
+    properties = node.props("origin") if node.key == "entity" else []
+    for side in sides:
+        for key in ("plane", "uaxis", "vaxis"):
+            properties.extend(side.props(key))
+    for prop in properties:
         if prop.key in ("origin", "plane"):
             values = vector(prop.value, 9 if prop.key == "plane" else 3)
             moved = [x + delta[i % 3] for i, x in enumerate(values)]
@@ -531,13 +582,13 @@ def validate(text: str) -> dict:
             if not value.isdecimal() or int(value) < 1:
                 errors.append(f"{n.key} has invalid id {value!r}")
             else:
-                ids.append(value)
+                ids.append(("entity" if n.key == "world" else n.key, int(value)))
         try:
             if n.key == "entity":
                 if not n.get("classname"):
                     errors.append(f'Entity {n.get("id")} has no classname')
                 if n.props("origin"):
-                    vector(n.get("origin"))
+                    position(n.get("origin"))
             if n.key == "solid" and len(n.blocks("side")) < 4:
                 errors.append(f'Solid {n.get("id")} has fewer than four sides')
             if n.key == "side":
@@ -562,9 +613,9 @@ def validate(text: str) -> dict:
                     )
         except MapError as exc:
             errors.append(f'{n.key} {n.get("id")}: {exc}')
-    for value, count in Counter(ids).items():
+    for (kind, value), count in Counter(ids).items():
         if count > 1:
-            errors.append(f"Duplicate object id {value}")
+            errors.append(f"Duplicate {kind} id {value}")
     classes = {n.get("classname") for n in root.walk() if n.key == "entity"}
     for classname in ("info_player_terrorist", "info_player_counterterrorist"):
         if classname not in classes:

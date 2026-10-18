@@ -80,6 +80,13 @@ class CLITests(unittest.TestCase):
         self.assertEqual(result.returncode, 0)
         self.assertEqual(set(self.run_cli("schema")["data"]), set(TOOLS))
         self.run_cli("new", "map.vmf")
+        self.assertEqual(
+            self.run_cli("object", "map.vmf", "1")["data"]["kind"], "world"
+        )
+        self.assertEqual(
+            self.run_cli("object", "map.vmf", "1", "--kind", "world")["data"]["kind"],
+            "world",
+        )
         self.run_cli("new", "map.vmf", success=False)
         self.run_cli(
             "call", "inspect_map", '{"path":"map.vmf","limit":false}', success=False

@@ -19,6 +19,10 @@ REVISION = {
     "description": "Current revision returned by inspect; stale revisions are refused.",
 }
 MAP = {"type": "string", "description": "VMF path inside the server workspace."}
+KIND = {
+    "enum": ["world", "entity", "solid", "side", "group"],
+    "description": "Qualify IDs reused across VMF object namespaces.",
+}
 
 
 def schema(properties: dict, required: list[str]) -> dict:
@@ -38,7 +42,13 @@ OPERATIONS = {
     "oneOf": [
         operation(
             "add_box",
-            {"min": VECTOR, "max": VECTOR, "material": STRING, "parent_id": INTEGER},
+            {
+                "min": VECTOR,
+                "max": VECTOR,
+                "material": STRING,
+                "parent_id": INTEGER,
+                "parent_kind": {"enum": ["world", "entity"]},
+            },
             ["min", "max"],
         ),
         operation(
@@ -58,7 +68,7 @@ OPERATIONS = {
         ),
         operation(
             "set_properties",
-            {"id": INTEGER, "properties": PROPERTIES},
+            {"id": INTEGER, "properties": PROPERTIES, "kind": KIND},
             ["id", "properties"],
         ),
         operation(
@@ -74,8 +84,14 @@ OPERATIONS = {
             },
             ["id", "event", "target", "input"],
         ),
-        operation("translate", {"id": INTEGER, "delta": VECTOR}, ["id", "delta"]),
-        operation("delete", {"id": INTEGER}, ["id"]),
+        operation(
+            "translate",
+            {"id": INTEGER, "delta": VECTOR, "kind": {"enum": ["entity", "solid"]}},
+            ["id", "delta"],
+        ),
+        operation(
+            "delete", {"id": INTEGER, "kind": {"enum": ["entity", "solid"]}}, ["id"]
+        ),
     ]
 }
 
@@ -111,7 +127,7 @@ TOOLS = {
     ),
     "inspect_object": spec(
         "Read one object, outputs, side IDs and its original VMF source.",
-        {"path": MAP, "id": INTEGER},
+        {"path": MAP, "id": INTEGER, "kind": KIND},
         ["path", "id"],
     ),
     "validate_map": spec(
@@ -217,7 +233,7 @@ def execute(project: Project, config: dict, action: str, args: dict) -> dict:
     if action == "inspect_map":
         return project.inspect(path, **values)
     if action == "inspect_object":
-        return project.object(path, values["id"])
+        return project.object(path, values["id"], values.get("kind"))
     if action == "validate_map":
         return project.validate(path)
     if action == "edit_map":

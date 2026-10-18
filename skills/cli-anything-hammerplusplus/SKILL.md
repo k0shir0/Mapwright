@@ -17,7 +17,9 @@ entity keyvalues, inputs, outputs and local materials/models when available.
 
 For an existing map, use `inspect PATH` to obtain its current revision and
 object IDs. `object PATH ID` returns properties, repeated outputs and original
-source, including side IDs. Apply an edit with:
+source, including side IDs. If an imported map reuses IDs between kinds,
+qualify inspection with `--kind solid` and edits with `"kind":"solid"`.
+Use `parent_kind` to qualify a brush parent when needed. Apply an edit with:
 
 ```text
 hammer-agent --workspace MAP_DIRECTORY --json edit maps/example.vmf --expect CURRENT_HASH --ops @operations.json --dry-run

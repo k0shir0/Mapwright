@@ -151,6 +151,97 @@ class ProjectTests(unittest.TestCase):
             self.project.restore("map.vmf", self.revision(), "undo")
         self.assertEqual(path.read_bytes(), before)
 
+    def test_imported_vmf_namespaces_and_qualified_selectors(self):
+        from srctools import Vec
+        from srctools.vmf import VMF
+
+        native = VMF()
+        native.add_brush(native.make_prism(Vec(0, 0, 0), Vec(64, 64, 64)).solid)
+        native.create_ent("light", origin="0 0 80")
+        (self.root / "map.vmf").write_text(native.export())
+        self.assertTrue(self.project.validate("map.vmf")["valid"])
+        with self.assertRaisesRegex(vmf.MapError, "Ambiguous"):
+            self.project.object("map.vmf", 1)
+        self.assertEqual(self.project.object("map.vmf", 1, "solid")["kind"], "solid")
+        self.edit(
+            {
+                "op": "set_properties",
+                "id": 1,
+                "kind": "side",
+                "properties": {"material": "dev/dev_measuregeneric01b"},
+            }
+        )
+        self.edit(
+            {"op": "translate", "id": 1, "kind": "solid", "delta": [0.03125, 0, 0]}
+        )
+        self.edit(
+            {
+                "op": "add_output",
+                "id": 2,
+                "event": "OnUser1",
+                "target": "relay",
+                "input": "Trigger",
+            }
+        )
+        self.assertEqual(len(self.project.object("map.vmf", 2, "entity")["outputs"]), 1)
+        self.assertTrue(self.project.validate("map.vmf")["valid"])
+
+    def test_precise_geometry_and_zero_translation(self):
+        from srctools import Keyvalues, Vec
+        from srctools.vmf import VMF
+
+        entity = self.edit(
+            {"op": "add_entity", "classname": "light", "origin": [12345.125, 0, 0]}
+        )["results"][0]["ids"][0]
+        self.edit({"op": "translate", "id": entity, "delta": [0, 0, 0]})
+        self.assertEqual(
+            self.project.object("map.vmf", entity)["properties"]["origin"],
+            "12345.125 0 0",
+        )
+        brush = self.edit(
+            {"op": "add_box", "min": [10000.0625, 0, 0], "max": [10064.0625, 64, 64]}
+        )["results"][0]["ids"][0]
+        self.edit({"op": "translate", "id": brush, "delta": [0.03125, 0, 0]})
+        parsed = VMF.parse(Keyvalues.parse((self.root / "map.vmf").read_text()))
+        low, high = parsed.brushes[0].get_bbox()
+        self.assertEqual(low, Vec(10000.09375, 0, 0))
+        self.assertEqual(high, Vec(10064.09375, 64, 64))
+
+    def test_translation_preserves_unknown_extension_fields(self):
+        entity = self.edit(
+            {"op": "add_entity", "classname": "light", "origin": [0, 0, 64]}
+        )["results"][0]["ids"][0]
+        path = self.root / "map.vmf"
+        text = path.read_text()
+        extension = 'hammerplusplus_custom\n{\n"origin" "1 2 3"\n"plane" "opaque"\n"uaxis" "custom"\n}\n'
+        node = vmf.find_id(vmf.parse(text), entity, "entity")
+        path.write_text(vmf.insert(text, node, extension))
+        self.edit({"op": "translate", "id": entity, "delta": [10, 0, 0]})
+        after = path.read_text()
+        self.assertIn(extension, after)
+        self.assertEqual(
+            self.project.object("map.vmf", entity)["properties"]["origin"], "10 0 64"
+        )
+
+    def test_entity_origin_bounds_for_creation_and_property_edits(self):
+        before = self.revision()
+        with self.assertRaises(vmf.MapError):
+            self.edit(
+                {"op": "add_entity", "classname": "light", "origin": [1e100, 0, 64]}
+            )
+        self.assertEqual(before, self.revision())
+        entity = self.edit(
+            {"op": "add_entity", "classname": "light", "origin": [0, 0, 64]}
+        )["results"][0]["ids"][0]
+        with self.assertRaisesRegex(vmf.MapError, "bounds"):
+            self.edit(
+                {
+                    "op": "set_properties",
+                    "id": entity,
+                    "properties": {"origin": "1e100 0 64"},
+                }
+            )
+
     def test_pending_journal_recovers_after_map_published(self):
         before = self.revision()
         self.edit({"op": "add_entity", "classname": "light", "origin": [0, 0, 0]})
@@ -320,7 +411,7 @@ class FormatTests(unittest.TestCase):
         source, _ = vmf.mutate(
             vmf.new_map(), {"op": "add_box", "min": [0, 0, 0], "max": [16, 16, 16]}
         )
-        source = source.replace('"id" "3"', '"id" "1"', 1)
+        source = source.replace('"id" "3"', '"id" "4"', 1)
         self.assertFalse(vmf.validate(source)["valid"])
         plane = (
             vmf.parse(source)
