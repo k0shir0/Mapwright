@@ -85,3 +85,11 @@ The actual backend verification script exited 1: vbsp is missing. No BSP
 compilation, editor launch, editor capture or in-game playability is verified.
 Mocked compiler tests above check failure handling and staging only.
 Cross-platform CI is configured separately and was pending at this local run.
+
+## GitHub Actions
+
+The [first published CI run](https://github.com/k0shir0/hammerplusplus-agent/actions/runs/39155488502)
+passed on Windows and Ubuntu with Python 3.11 and 3.13 at commit `399870b`.
+CI reported deprecated Node 20 action runtimes. The workflow was updated to
+the verified official checkout v7.0.1 and setup-python v7.0.0 commits, both
+using Node 24; the follow-up run is attached to PR #1.
