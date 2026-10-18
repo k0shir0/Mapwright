@@ -92,6 +92,7 @@ OPERATIONS = {
         operation(
             "delete", {"id": INTEGER, "kind": {"enum": ["entity", "solid"]}}, ["id"]
         ),
+        operation("replace_source", {"source": STRING}, ["source"]),
     ]
 }
 
@@ -105,6 +106,120 @@ def spec(description: str, props: dict, required: list[str], readonly: bool = Tr
 
 
 TOOLS = {
+    "list_map_files": spec(
+        "List mapping files in the selected workspace.",
+        {"query": STRING, "limit": {"type": "integer", "minimum": 1, "maximum": 1000}},
+        [],
+    ),
+    "read_map_source": spec(
+        "Read any native VMF feature as paginated source text with its revision. Use replace_source in edit_map to author features without a specialized helper.",
+        {
+            "path": MAP,
+            "offset": {"type": "integer", "minimum": 0},
+            "limit": {"type": "integer", "minimum": 1, "maximum": 1000000},
+        },
+        ["path"],
+    ),
+    "delete_map_file": spec(
+        "Delete a VMF file after snapshotting it; returns a token for recovery. Requires current revision.",
+        {"path": MAP, "expected_revision": REVISION},
+        ["path", "expected_revision"],
+        False,
+    ),
+    "restore_map_file": spec(
+        "Restore a deleted map from its recovery token, refusing overwrite.",
+        {"token": STRING},
+        ["token"],
+        False,
+    ),
+    "import_reference_map": spec(
+        "Import an explicitly supplied external VMF or CS:GO BSP. BSPSource decompiles BSP to VMF; embedded assets are safely extracted locally. Returns provenance and reconstruction limits.",
+        {
+            "source": STRING,
+            "output": MAP,
+            "timeout": {"type": "integer", "minimum": 1, "maximum": 3600},
+        },
+        ["source", "output"],
+        False,
+    ),
+    "search_reference_map": spec(
+        "Find reference-map entities and world brushes by text in names/materials/properties and optional spatial bounds. Use this evidence to resolve the user plain-language item description before copying.",
+        {
+            "path": MAP,
+            "query": STRING,
+            "minimum": VECTOR,
+            "maximum": VECTOR,
+            "kind": {"enum": ["solid", "entity", ""]},
+            "offset": {"type": "integer", "minimum": 0},
+            "limit": {"type": "integer", "minimum": 1, "maximum": 1000},
+        },
+        ["path"],
+    ),
+    "copy_reference_objects": spec(
+        "Copy identified reference solids/entities into an existing destination VMF with both revisions checked, ID and targetname remapping, linked entities, texture-locked translation and provenance. Supports displacements and overlay face remapping; inspect external-reference warnings.",
+        {
+            "source": MAP,
+            "destination": MAP,
+            "source_revision": REVISION,
+            "expected_revision": REVISION,
+            "selection": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 10000,
+                "items": schema(
+                    {"id": INTEGER, "kind": {"enum": ["solid", "entity"]}},
+                    ["id", "kind"],
+                ),
+            },
+            "delta": VECTOR,
+            "prefix": STRING,
+            "include_links": {"type": "boolean"},
+            "dry_run": {"type": "boolean"},
+        },
+        ["source", "destination", "source_revision", "expected_revision", "selection"],
+        False,
+    ),
+    "inspect_editor": spec(
+        "Inspect the actual configured Hammer++ PID: menus, enabled commands, windows, dialogs and controls. Native UI fallback for all editor features, including those without dedicated VMF helpers.",
+        {
+            "pid": {"type": "integer", "minimum": 1},
+            "limit": {"type": "integer", "minimum": 1, "maximum": 1000},
+        },
+        ["pid"],
+    ),
+    "editor_action": spec(
+        "Interact with the actual editor using discovered menu paths/control handles, keyboard, mouse, text, combo selection, drag or window actions. GUI changes/saves act inside Hammer++; inspect state and rendered capture afterward.",
+        {
+            "pid": {"type": "integer", "minimum": 1},
+            "action": {
+                "enum": [
+                    "menu",
+                    "keys",
+                    "text",
+                    "select",
+                    "invoke",
+                    "click",
+                    "double_click",
+                    "drag",
+                    "focus",
+                    "restore",
+                    "maximize",
+                    "close",
+                ]
+            },
+            "hwnd": INTEGER,
+            "menu": STRING,
+            "text": STRING,
+            "keys": STRING,
+            "x": INTEGER,
+            "y": INTEGER,
+            "end_x": INTEGER,
+            "end_y": INTEGER,
+            "button": {"enum": ["left", "right", "middle"]},
+        },
+        ["pid", "action"],
+        False,
+    ),
     "doctor": spec(
         "Report legacy CS:GO SDK and Hammer++ readiness without launching tools.",
         {},
@@ -185,7 +300,11 @@ TOOLS = {
     ),
     "capture_editor": spec(
         "Capture a specific configured Hammer++ process window to a new workspace PNG on Windows. Inspect the returned image for visual evidence.",
-        {"pid": {"type": "integer", "minimum": 1}, "output": STRING},
+        {
+            "pid": {"type": "integer", "minimum": 1},
+            "output": STRING,
+            "method": {"enum": ["window", "screen"]},
+        },
         ["pid", "output"],
         False,
     ),
@@ -226,6 +345,30 @@ def execute(project: Project, config: dict, action: str, args: dict) -> dict:
         ) from exc
     values = dict(args)
     path = values.pop("path", None)
+    if action == "list_map_files":
+        return project.files(**values)
+    if action == "read_map_source":
+        return project.source(path, **values)
+    if action == "delete_map_file":
+        return project.delete_file(path, **values)
+    if action == "restore_map_file":
+        return project.restore_file(**values)
+    if action in (
+        "import_reference_map",
+        "search_reference_map",
+        "copy_reference_objects",
+    ):
+        from . import reference
+
+        if action == "import_reference_map":
+            return reference.import_map(project, config, **values)
+        if action == "search_reference_map":
+            return reference.search(project, path, **values)
+        return reference.copy_objects(project, config=config, **values)
+    if action in ("inspect_editor", "editor_action"):
+        from . import desktop
+
+        return getattr(desktop, action)(project, config, **values)
     if action == "doctor":
         return backend.doctor(project, config)
     if action == "create_map":

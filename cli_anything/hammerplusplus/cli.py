@@ -39,6 +39,31 @@ def parser():
     )
     commands = root.add_subparsers(dest="command", required=True)
     commands.add_parser("doctor", help=TOOLS["doctor"]["description"])
+    files = commands.add_parser("files")
+    files.add_argument("--query", default="")
+    files.add_argument("--limit", type=int, default=100)
+    source = commands.add_parser("source")
+    source.add_argument("path")
+    source.add_argument("--offset", type=int, default=0)
+    source.add_argument("--limit", type=int, default=100000)
+    delete = commands.add_parser("delete-file")
+    delete.add_argument("path")
+    delete.add_argument("--expect", required=True)
+    restore = commands.add_parser("restore-file")
+    restore.add_argument("token")
+    imp = commands.add_parser("import-reference")
+    imp.add_argument("source")
+    imp.add_argument("output")
+    imp.add_argument("--timeout", type=int, default=180)
+    find = commands.add_parser("find")
+    find.add_argument("path")
+    find.add_argument("--query", default="")
+    find.add_argument("--kind", choices=["solid", "entity", ""], default="")
+    find.add_argument("--offset", type=int, default=0)
+    find.add_argument("--limit", type=int, default=100)
+    state = commands.add_parser("editor-state")
+    state.add_argument("pid", type=int)
+    state.add_argument("--limit", type=int, default=200)
     new = commands.add_parser("new", help="Create a VMF without overwrite")
     new.add_argument("path")
     new.add_argument("--template", choices=["empty", "csgo-room"], default="empty")
@@ -78,6 +103,7 @@ def parser():
     capture = commands.add_parser("editor-capture")
     capture.add_argument("pid", type=int)
     capture.add_argument("output")
+    capture.add_argument("--method", choices=["window", "screen"], default="window")
     for command in ("entities", "assets"):
         sub = commands.add_parser(command)
         sub.add_argument("--query", default="")
@@ -155,6 +181,13 @@ def main(argv=None):
             return 0
         else:
             action = {
+                "files": "list_map_files",
+                "source": "read_map_source",
+                "delete-file": "delete_map_file",
+                "restore-file": "restore_map_file",
+                "import-reference": "import_reference_map",
+                "find": "search_reference_map",
+                "editor-state": "inspect_editor",
                 "new": "create_map",
                 "inspect": "inspect_map",
                 "object": "inspect_object",

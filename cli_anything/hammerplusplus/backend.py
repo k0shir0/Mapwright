@@ -35,6 +35,7 @@ def load_config(project: Project, name: str = "hammer-agent.local.json") -> dict
         "vrad",
         "fgd",
         "rea",
+        "bspsrc_java",
     }:
         raise MapError("Invalid configuration keys; see hammer-agent.example.json")
     if any(not isinstance(value, str) or not value for value in config.values()):
@@ -53,7 +54,7 @@ def configured_path(project: Project, config: dict, key: str) -> Path | None:
 def doctor(project: Project, config: dict) -> dict:
     game = configured_path(project, config, "game_dir")
     reports = {}
-    for key in ("hammer", "vbsp", "vvis", "vrad", "fgd", "rea"):
+    for key in ("hammer", "vbsp", "vvis", "vrad", "fgd", "rea", "bspsrc_java"):
         path = configured_path(project, config, key)
         reports[key] = {
             "path": str(path) if path else None,
@@ -108,7 +109,9 @@ def doctor(project: Project, config: dict) -> dict:
         "compile_ready": game_ready
         and all(reports[key]["exists"] for key in ("vbsp", "vvis", "vrad")),
         "candidates": candidates,
-        "setup": "Install and launch the legacy CS:GO SDK through Steam if your account has access; install official Hammer++ CS:GO build 8864 into its bin directory. Configure absolute paths. CS2 tools cannot compile VMF.",
+        "decompile_ready": reports["bspsrc_java"]["exists"],
+        "readiness_scope": "Paths and prerequisites only; verify actual compilation, decompilation and visible editor rendering separately.",
+        "setup": "Use scripts/setup_local.py with an owned legacy CS:GO runtime, or install the legacy CS:GO SDK through Steam. Tools++ supports Source 1 CS:GO. CS2 tools cannot compile VMF.",
     }
 
 
@@ -209,7 +212,7 @@ def compile_map(
         if mode == "fast" and key in ("vvis", "vrad"):
             args.append("-fast")
         if key == "vrad":
-            args.append("-ldr")
+            args.append("-hdr")
         args.extend(["-game", str(game), str(staged if key == "vbsp" else bsp)])
         log = build / f"{key}.log"
         with log.open("wb") as output:

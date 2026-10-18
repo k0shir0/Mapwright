@@ -202,7 +202,16 @@ def new_map() -> str:
             },
         )
         + block("visgroups", {})
-        + block("viewsettings", {"bSnapToGrid": "1", "nGridSpacing": "16"})
+        + block(
+            "viewsettings",
+            {
+                "bSnapToGrid": "1",
+                "bShowGrid": "1",
+                "bShowLogicalGrid": "0",
+                "bShow3DGrid": "0",
+                "nGridSpacing": "16",
+            },
+        )
         + block(
             "world",
             {
@@ -294,6 +303,12 @@ def make_box(low: Any, high: Any, material: str, start_id: int) -> tuple[str, in
 def mutate(text: str, operation: dict) -> tuple[str, dict]:
     if not isinstance(operation, dict):
         raise MapError("Each operation must be an object")
+    if operation.get("op") == "replace_source":
+        if set(operation) != {"op", "source"} or not isinstance(
+            operation["source"], str
+        ):
+            raise MapError("replace_source requires a VMF source string")
+        return operation["source"], {"op": "replace_source"}
     root = parse(text)
     op = operation.get("op")
     fields = {
