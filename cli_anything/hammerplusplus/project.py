@@ -111,6 +111,91 @@ class Project:
         _, data, text, _ = self.read(name)
         return {"revision": digest(data), **vmf.validate(text)}
 
+    def source(self, name: str, offset: int = 0, limit: int = 100000) -> dict:
+        _, data, text, encoding = self.read(name)
+        if offset < 0 or not 1 <= limit <= 1000000:
+            raise vmf.MapError(
+                "offset must be nonnegative, limit between 1 and 1000000"
+            )
+        return {
+            "revision": digest(data),
+            "encoding": encoding,
+            "source": text[offset : offset + limit],
+            "offset": offset,
+            "total_characters": len(text),
+            "next_offset": offset + limit if offset + limit < len(text) else None,
+        }
+
+    def files(self, query: str = "", limit: int = 100) -> dict:
+        if not 1 <= limit <= 1000:
+            raise vmf.MapError("limit must be between 1 and 1000")
+        rows = []
+        for folder, dirs, files in os.walk(self.root, followlinks=False):
+            dirs[:] = [
+                d
+                for d in dirs
+                if d
+                not in {".git", ".venv", ".hammer-agent", "node_modules", "__pycache__"}
+                and (Path(folder) / d).resolve().is_relative_to(self.root)
+            ]
+            for filename in files:
+                p = Path(folder) / filename
+                if (
+                    p.suffix.lower() in {".vmf", ".bsp", ".map", ".rmf"}
+                    and query.casefold() in str(p.relative_to(self.root)).casefold()
+                ):
+                    if not p.resolve().is_relative_to(self.root):
+                        continue
+                    rows.append(
+                        {
+                            "path": p.relative_to(self.root).as_posix(),
+                            "bytes": p.stat().st_size,
+                            "format": p.suffix[1:].lower(),
+                        }
+                    )
+        rows.sort(key=lambda r: r["path"])
+        return {
+            "total": len(rows),
+            "files": rows[:limit],
+            "truncated": len(rows) > limit,
+        }
+
+    def delete_file(self, name: str, expected_revision: str) -> dict:
+        with self.locked():
+            path, data, _, _ = self.read(name)
+            if digest(data) != expected_revision:
+                raise vmf.MapError("Revision conflict; inspect again before deleting")
+            self.snapshot(expected_revision, data)
+            token = os.urandom(16).hex()
+            receipt = {
+                "path": str(path.relative_to(self.root)),
+                "revision": expected_revision,
+                "token": token,
+            }
+            atomic_write(
+                self.confined(f".hammer-agent/trash/{token}.json"),
+                json.dumps(receipt).encode(),
+            )
+            if path.read_bytes() != data:
+                raise vmf.MapError("Map changed before deletion")
+            path.unlink()
+        return {
+            **receipt,
+            "deleted": True,
+            "recovery": "restore_map_file with this token",
+        }
+
+    def restore_file(self, token: str) -> dict:
+        if len(token) != 32 or any(c not in "0123456789abcdef" for c in token):
+            raise vmf.MapError("Invalid deletion token")
+        with self.locked():
+            receipt = json.loads(
+                self.confined(f".hammer-agent/trash/{token}.json").read_text()
+            )
+            path = self.map_path(receipt["path"])
+            atomic_write(path, self.snapshot(receipt["revision"]), exclusive=True)
+        return self.inspect(receipt["path"])
+
     def create(self, name: str, template: str = "empty") -> dict:
         if template not in ("empty", "csgo-room"):
             raise vmf.MapError("template must be empty or csgo-room")
@@ -239,6 +324,8 @@ class Project:
                 raise vmf.MapError(
                     f"Edited values cannot be encoded as {encoding}"
                 ) from exc
+            if len(after) > 64 * 1024 * 1024:
+                raise vmf.MapError("Edited VMF exceeds the 64 MiB editing limit")
             revision = digest(after)
             if not dry_run and after != before:
                 old = self.load_history(path)
@@ -247,7 +334,17 @@ class Project:
                     {
                         "before": expected_revision,
                         "after": revision,
-                        "operations": operations,
+                        "operations": [
+                            (
+                                {
+                                    "op": "replace_source",
+                                    "source_revision": digest(op["source"].encode()),
+                                }
+                                if op.get("op") == "replace_source"
+                                else op
+                            )
+                            for op in operations
+                        ],
                     }
                 )
                 self.publish(

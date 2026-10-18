@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ctypes
+import io
 from ctypes import wintypes
 import os
 from pathlib import Path
@@ -14,7 +15,9 @@ from .project import Project, atomic_write
 from .vmf import MapError
 
 
-def capture_editor(project: Project, config: dict, pid: int, output: str) -> dict:
+def capture_editor(
+    project: Project, config: dict, pid: int, output: str, method: str = "window"
+) -> dict:
     if os.name != "nt":
         raise BackendError("Editor window capture requires Windows")
     if isinstance(pid, bool) or pid <= 0:
@@ -78,6 +81,33 @@ def capture_editor(project: Project, config: dict, pid: int, output: str) -> dic
     if not windows:
         raise BackendError("No visible window belongs to this Hammer++ process")
     _, hwnd, rect = max(windows, key=lambda row: row[0])
+    user.IsIconic.argtypes = [wintypes.HWND]
+    if user.IsIconic(hwnd):
+        raise BackendError("Editor is minimized; restore it before capturing viewports")
+    if method == "screen":
+        from .desktop import application
+
+        app = application(project, config, pid)
+        window = app.window(handle=hwnd)
+        window.set_focus()
+        from PIL import ImageGrab
+        import win32gui
+
+        region = win32gui.GetWindowRect(hwnd)
+        captured = ImageGrab.grab(bbox=region, all_screens=True)
+        buffer = io.BytesIO()
+        captured.save(buffer, format="PNG")
+        atomic_write(path, buffer.getvalue(), exclusive=True)
+        return {
+            "path": str(path),
+            "pid": pid,
+            "width": captured.width,
+            "height": captured.height,
+            "method": "visible-window-screen",
+            "verification": "Includes visible GPU viewports. Inspect the image and window state; occluded or black viewports are not rendering evidence.",
+        }
+    if method != "window":
+        raise BackendError("method must be window or screen")
     width, height = rect.right - rect.left, rect.bottom - rect.top
     if not 1 <= width <= 8192 or not 1 <= height <= 8192:
         raise BackendError("Window dimensions exceed the capture limit")

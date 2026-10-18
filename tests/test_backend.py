@@ -90,7 +90,7 @@ class BackendTests(unittest.TestCase):
             )
         self.assertEqual(len(calls), 3)
         self.assertIn("-fast", calls[1])
-        self.assertIn("-ldr", calls[2])
+        self.assertIn("-hdr", calls[2])
         self.assertEqual(result["bsp"]["version"], 21)
         self.assertTrue((Path(result["build_dir"]) / "receipt.json").is_file())
         self.assertNotEqual(Path(result["build_dir"]), self.root)

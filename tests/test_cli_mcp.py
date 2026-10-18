@@ -169,6 +169,58 @@ class CLITests(unittest.TestCase):
                     )
                     self.assertTrue(malformed.isError)
                     self.assertFalse(json.loads(malformed.content[0].text)["ok"])
+                    imported = await session.call_tool(
+                        "import_reference_map",
+                        {
+                            "source": str(self.root / "mcp.vmf"),
+                            "output": "reference.vmf",
+                        },
+                    )
+                    self.assertFalse(imported.isError)
+                    found = await session.call_tool(
+                        "search_reference_map",
+                        {"path": "reference.vmf", "query": "logic_relay"},
+                    )
+                    selection = found.structuredContent["data"]["objects"][0]
+                    current = await session.call_tool(
+                        "inspect_map", {"path": "mcp.vmf"}
+                    )
+                    copied = await session.call_tool(
+                        "copy_reference_objects",
+                        {
+                            "source": "reference.vmf",
+                            "destination": "mcp.vmf",
+                            "source_revision": imported.structuredContent["data"][
+                                "revision"
+                            ],
+                            "expected_revision": current.structuredContent["data"][
+                                "revision"
+                            ],
+                            "selection": [{"id": selection["id"], "kind": "entity"}],
+                        },
+                    )
+                    self.assertFalse(copied.isError)
+                    deleted = await session.call_tool(
+                        "delete_map_file",
+                        {
+                            "path": "reference.vmf",
+                            "expected_revision": imported.structuredContent["data"][
+                                "revision"
+                            ],
+                        },
+                    )
+                    self.assertFalse(deleted.isError)
+                    self.assertFalse((self.root / "reference.vmf").exists())
+                    restored = await session.call_tool(
+                        "restore_map_file",
+                        {"token": deleted.structuredContent["data"]["token"]},
+                    )
+                    self.assertFalse(restored.isError)
+                    self.assertTrue((self.root / "reference.vmf").exists())
+                    self.assertEqual(
+                        restored.structuredContent["data"]["revision"],
+                        imported.structuredContent["data"]["revision"],
+                    )
 
         anyio.run(scenario)
 

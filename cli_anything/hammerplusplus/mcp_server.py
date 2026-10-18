@@ -1,9 +1,11 @@
 """Official MCP SDK stdio transport; map operations share the CLI contract."""
 
 from functools import partial
+import base64
 import json
 
 from .api import TOOLS, execute
+from . import __version__
 from .backend import BackendError
 from .project import Project
 
@@ -13,14 +15,20 @@ def serve(project: Project, config: dict):
         import anyio
         from mcp.server import Server
         from mcp.server.stdio import stdio_server
-        from mcp.types import CallToolResult, TextContent, Tool, ToolAnnotations
+        from mcp.types import (
+            CallToolResult,
+            TextContent,
+            ImageContent,
+            Tool,
+            ToolAnnotations,
+        )
     except ImportError as exc:
         raise BackendError(
             'Install the MCP extra: python -m pip install -e ".[mcp]"'
         ) from exc
     server = Server(
         "hammerplusplus-agent",
-        version="0.1.0",
+        version=__version__,
         instructions="Legacy CS:GO Source 1 mapping. Start with doctor and inspect_map. Pass the returned revision to edit_map. Use native compilers and editor captures before claiming playable or rendered results.",
     )
 
@@ -55,10 +63,21 @@ def serve(project: Project, config: dict):
             result = {"ok": False, "error": str(exc)}
             if isinstance(exc, BackendError):
                 result["details"] = exc.details
+        content = [
+            TextContent(type="text", text=json.dumps(result, ensure_ascii=False))
+        ]
+        if name == "capture_editor" and result["ok"]:
+            content.append(
+                ImageContent(
+                    type="image",
+                    mimeType="image/png",
+                    data=base64.b64encode(
+                        project.confined(result["data"]["path"]).read_bytes()
+                    ).decode("ascii"),
+                )
+            )
         return CallToolResult(
-            content=[
-                TextContent(type="text", text=json.dumps(result, ensure_ascii=False))
-            ],
+            content=content,
             structuredContent=result,
             isError=not result["ok"],
         )
