@@ -12,9 +12,24 @@ import subprocess
 import uuid
 import zipfile
 
-from . import vmf
+from . import vmf, catalog
 from .backend import BackendError, configured_path, require_tool
 from .project import Project, atomic_write, decode, digest
+
+# GOKZ interprets these names as an API, rather than ordinary entity labels.
+KZ_NAMES = re.compile(
+    r"climb_(?:(?:bonus[1-9][0-9]*_)?(?:start|end)(?:button|zone)?|teleport|bhop_reset|anti_(?:pause|checkpoint|bhop|jumpstat))$",
+    re.I,
+)
+ENTITY_INPUTS = {
+    "setparent",
+    "settarget",
+    "setfilter",
+    "setlightingorigin",
+    "setmeasuretarget",
+    "setmeasurereference",
+    "settargetreference",
+}
 
 
 def receipt_path(project: Project, path: Path) -> Path:
@@ -346,29 +361,89 @@ def copy_objects(
         "filtername",
         "landmark",
         "lightingorigin",
-        "globalname",
         "measuretarget",
         "measurereference",
         "targetreference",
         "teleportfilter",
+        "climb_teleport_destination",
     }
+    definitions = None
+    if config and config.get("fgd"):
+        FGD, _ = catalog.source_tools()
+        from srctools.filesys import RawFileSystem
+
+        fgd = configured_path(project, config, "fgd")
+        definitions = FGD.parse(fgd.name, RawFileSystem(fgd.parent))
+
+    def fields(node, types):
+        if definitions is None:
+            return set()
+        try:
+            entity = definitions[node.get("classname")]
+        except KeyError:
+            return set()
+        return {
+            key.casefold()
+            for key in entity.kv
+            if getattr(entity.kv[key].type, "value", None) in types
+        }
+
+    def entity_links(node):
+        return links | (
+            fields(
+                node, {"target_destination", "target_name_or_class", "target_source"}
+            )
+            - {"targetname", "globalname"}
+        )
+
+    def face_fields(node):
+        fallback = {
+            "info_overlay": {"sides"},
+            "env_cubemap": {"sides"},
+            "info_no_dynamic_shadow": {"sides"},
+            "info_overlay_transition": {"sides", "sides2"},
+        }
+        return fallback.get(node.get("classname"), set()) | fields(node, {"sidelist"})
+
     entities = [n for n in objects(src_root) if n.key == "entity"]
     named = {}
     for ent in entities:
         if ent.get("targetname"):
             named.setdefault(ent.get("targetname").casefold(), []).append(ent)
 
+    def entity_parameter(parts):
+        if len(parts) < 3:
+            return False
+        if parts[1].casefold() in ENTITY_INPUTS:
+            return True
+        if definitions is not None:
+            for target in named.get(parts[0].casefold(), []):
+                try:
+                    parameter = definitions[target.get("classname")].inp[
+                        parts[1].casefold()
+                    ]
+                except KeyError:
+                    continue
+                if getattr(parameter.type, "value", None) in (
+                    "target_destination",
+                    "target_name_or_class",
+                ):
+                    return True
+        return False
+
     def references(node):
         found = []
         for p in node.children:
-            if p.value is not None and p.key.casefold() in links:
+            if p.value is not None and p.key.casefold() in entity_links(node):
                 found.append(p.value.split(",")[0])
         for c in node.blocks("connections"):
-            found.extend(
-                p.value.split("\x1b" if "\x1b" in p.value else ",")[0]
-                for p in c.children
-                if p.value is not None
-            )
+            for p in c.children:
+                if p.value is None:
+                    continue
+                parts = p.value.split("\x1b" if "\x1b" in p.value else ",")
+                found.append(parts[0])
+                if entity_parameter(parts):
+                    found.append(parts[2])
         return found
 
     if include_links:
@@ -388,15 +463,45 @@ def copy_objects(
             "prefix must be an identifier ending or beginning with letters/underscore"
         )
     names = {
-        n.get("targetname").casefold(): prefix + n.get("targetname")
+        n.get("targetname").casefold(): (
+            n.get("targetname")
+            if KZ_NAMES.fullmatch(n.get("targetname"))
+            else prefix + n.get("targetname")
+        )
         for n in chosen
         if n.key == "entity" and n.get("targetname")
     }
     occupied = {
         n.get("targetname").casefold() for n in objects(dst_root) if n.key == "entity"
     }
-    if any(n.casefold() in occupied for n in names.values()):
+    repeatable = {
+        n.get("targetname").casefold()
+        for n in chosen
+        if n.key == "entity"
+        and n.get("classname") in ("trigger_multiple", "func_button")
+        and KZ_NAMES.fullmatch(n.get("targetname"))
+    }
+    if any(
+        n.casefold() in occupied and n.casefold() not in repeatable
+        for n in names.values()
+    ):
         raise vmf.MapError("Targetname prefix collides with the destination map")
+    if any(
+        KZ_NAMES.fullmatch(n.get("targetname")) for n in chosen if n.key == "entity"
+    ):
+        api_version = src_root.blocks("world")[0].get("climb_mapping_api_version")
+        current = dst_root.blocks("world")[0].get("climb_mapping_api_version")
+        if api_version and current and api_version != current:
+            raise vmf.MapError(
+                "GOKZ mapping API versions differ; resolve the destination version before copying"
+            )
+        if api_version and not current:
+            dst_text = vmf.set_properties(
+                dst_text,
+                dst_root.blocks("world")[0],
+                {"climb_mapping_api_version": api_version},
+            )
+            dst_root = vmf.parse(dst_text)
     next_id = vmf.next_id(dst_root)
     id_map = {}
     rows = []
@@ -438,7 +543,9 @@ def copy_objects(
                     for p in node.children:
                         if p.value is None:
                             continue
-                        if p.key == "targetname" or p.key.casefold() in links:
+                        if p.key == "targetname" or p.key.casefold() in entity_links(
+                            node
+                        ):
                             value = p.value
                             head, sep, tail = value.partition(",")
                             if head.casefold() in names:
@@ -449,7 +556,7 @@ def copy_objects(
                                         vmf.quote(names[head.casefold()] + sep + tail),
                                     )
                                 )
-                        elif p.key == "sides":
+                        elif p.key.casefold() in face_fields(node):
                             old = p.value.split()
                             missing = [v for v in old if ("side", v) not in id_map]
                             if missing:
@@ -471,8 +578,15 @@ def copy_objects(
                                 continue
                             sep = "\x1b" if "\x1b" in p.value else ","
                             parts = p.value.split(sep)
+                            parameter_is_entity = entity_parameter(parts)
+                            changed = False
                             if parts[0].casefold() in names:
                                 parts[0] = names[parts[0].casefold()]
+                                changed = True
+                            if parameter_is_entity and parts[2].casefold() in names:
+                                parts[2] = names[parts[2].casefold()]
+                                changed = True
+                            if changed:
                                 changes.append(
                                     (p.value_start, p.end, vmf.quote(sep.join(parts)))
                                 )
@@ -510,6 +624,23 @@ def copy_objects(
             if game:
                 info = project.confined(game / "gameinfo.txt")
                 raw = info.read_bytes()
+                filesystem = catalog.game_filesystem(game)
+                for incoming in assets.rglob("*"):
+                    if not incoming.is_file():
+                        continue
+                    virtual = incoming.relative_to(assets).as_posix()
+                    incoming_hash = digest(incoming.read_bytes())
+                    for provider, subfolder in filesystem.systems:
+                        try:
+                            existing = provider[subfolder + virtual]
+                        except FileNotFoundError:
+                            continue
+                        with existing.open_bin() as stream:
+                            existing_hash = digest(stream.read())
+                        if existing_hash != incoming_hash:
+                            raise vmf.MapError(
+                                f"Embedded asset conflict: {virtual}; existing {provider.path} SHA256 {existing_hash}; incoming {incoming} SHA256 {incoming_hash}. Rename/remap the conflicting asset before copying."
+                            )
                 content, encoding = decode(raw)
                 root = vmf.parse(content)
                 candidates = [
@@ -535,10 +666,20 @@ def copy_objects(
                     with project.locked():
                         if info.read_bytes() != raw:
                             raise vmf.MapError("Game configuration changed; retry copy")
-                        updated = vmf.insert(
+                        position = (
+                            searchpaths.children[0].start
+                            if searchpaths.children
+                            else searchpaths.close
+                        )
+                        updated = vmf.replace(
                             content,
-                            searchpaths,
-                            "\n\tGame " + vmf.quote(str(assets)) + "\n",
+                            [
+                                (
+                                    position,
+                                    position,
+                                    "\n\tGame " + vmf.quote(str(assets)) + "\n",
+                                )
+                            ],
                         )
                         atomic_write(info, updated.encode(encoding))
                 asset_mount.update(

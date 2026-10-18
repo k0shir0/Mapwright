@@ -201,6 +201,7 @@ TOOLS = {
                     "click",
                     "double_click",
                     "drag",
+                    "scroll",
                     "focus",
                     "restore",
                     "maximize",
@@ -216,6 +217,7 @@ TOOLS = {
             "end_x": INTEGER,
             "end_y": INTEGER,
             "button": {"enum": ["left", "right", "middle"]},
+            "steps": {"type": "integer", "minimum": -100, "maximum": 100},
         },
         ["pid", "action"],
         False,
@@ -361,14 +363,30 @@ def execute(project: Project, config: dict, action: str, args: dict) -> dict:
         from . import reference
 
         if action == "import_reference_map":
-            return reference.import_map(project, config, **values)
+            import zipfile
+
+            try:
+                return reference.import_map(project, config, **values)
+            except (zipfile.BadZipFile, RuntimeError, NotImplementedError) as exc:
+                raise backend.BackendError(f"Reference import failed: {exc}") from exc
         if action == "search_reference_map":
             return reference.search(project, path, **values)
         return reference.copy_objects(project, config=config, **values)
-    if action in ("inspect_editor", "editor_action"):
-        from . import desktop
+    if action in ("inspect_editor", "editor_action", "capture_editor"):
+        if action == "capture_editor":
+            from . import windows as native
+        else:
+            from . import desktop as native
 
-        return getattr(desktop, action)(project, config, **values)
+        try:
+            return getattr(native, action)(project, config, **values)
+        except backend.BackendError:
+            raise
+        except Exception as exc:
+            # Win32 and pywinauto exceptions are not necessarily OSError subclasses.
+            raise backend.BackendError(
+                f"Native editor operation failed: {exc}"
+            ) from exc
     if action == "doctor":
         return backend.doctor(project, config)
     if action == "create_map":
@@ -389,10 +407,6 @@ def execute(project: Project, config: dict, action: str, args: dict) -> dict:
         return backend.compile_map(project, config, path, **values)
     if action == "open_editor":
         return backend.open_editor(project, config, path)
-    if action == "capture_editor":
-        from .windows import capture_editor
-
-        return capture_editor(project, config, **values)
     if action == "entity_catalog":
         return catalog.entities(project, config, **values)
     if action == "asset_catalog":

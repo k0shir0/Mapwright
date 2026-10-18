@@ -15,11 +15,21 @@ from .project import Project, atomic_write
 from .vmf import MapError
 
 
+def set_dpi_awareness():
+    """Keep window rectangles, mouse input and capture in physical pixels."""
+    user = ctypes.WinDLL("user32", use_last_error=True)
+    if hasattr(user, "SetThreadDpiAwarenessContext"):
+        user.SetThreadDpiAwarenessContext.argtypes = [wintypes.HANDLE]
+        user.SetThreadDpiAwarenessContext.restype = wintypes.HANDLE
+        user.SetThreadDpiAwarenessContext(wintypes.HANDLE(-4))
+
+
 def capture_editor(
     project: Project, config: dict, pid: int, output: str, method: str = "window"
 ) -> dict:
     if os.name != "nt":
         raise BackendError("Editor window capture requires Windows")
+    set_dpi_awareness()
     if isinstance(pid, bool) or pid <= 0:
         raise MapError("pid must be a positive process ID")
     path = project.confined(output)

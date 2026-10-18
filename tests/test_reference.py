@@ -160,6 +160,204 @@ class ReferenceTests(unittest.TestCase):
         result = self.copy([{"id": ent, "kind": "entity"}], include_links=False)
         self.assertEqual(result["external_references"], ["outside"])
 
+    def test_output_entity_parameters_are_followed_and_remapped(self):
+        first = self.edit(
+            {
+                "op": "add_entity",
+                "classname": "logic_relay",
+                "origin": [0, 0, 0],
+                "properties": {"targetname": "a"},
+            }
+        )["results"][0]["ids"][0]
+        self.edit(
+            {
+                "op": "add_entity",
+                "classname": "info_target",
+                "origin": [0, 0, 0],
+                "properties": {"targetname": "b"},
+            }
+        )
+        self.edit(
+            {
+                "op": "add_entity",
+                "classname": "info_target",
+                "origin": [0, 0, 0],
+                "properties": {"targetname": "c"},
+            }
+        )
+        self.edit(
+            {
+                "op": "add_output",
+                "id": first,
+                "event": "OnTrigger",
+                "target": "b",
+                "input": "SetParent",
+                "parameter": "c",
+            }
+        )
+        result = self.copy([{"id": first, "kind": "entity"}], prefix="copied_")
+        self.assertEqual(len(result["copied"]), 3)
+        self.assertEqual(result["external_references"], [])
+        source = self.project.object(
+            "destination.vmf", result["copied"][0]["destination_id"], "entity"
+        )["source"]
+        self.assertIn("copied_b,SetParent,copied_c", source)
+
+    def test_gokz_copy_preserves_protocol_names_and_remaps_destination(self):
+        self.edit(
+            {
+                "op": "set_properties",
+                "id": 1,
+                "kind": "world",
+                "properties": {"climb_mapping_api_version": "1"},
+            }
+        )
+        trigger = self.edit(
+            {
+                "op": "add_entity",
+                "classname": "trigger_multiple",
+                "origin": [0, 0, 0],
+                "properties": {
+                    "targetname": "climb_teleport",
+                    "climb_teleport_destination": "landing",
+                },
+            }
+        )["results"][0]["ids"][0]
+        self.edit(
+            {
+                "op": "add_entity",
+                "classname": "info_teleport_destination",
+                "origin": [0, 0, 8],
+                "properties": {"targetname": "landing"},
+            }
+        )
+        result = self.copy([{"id": trigger, "kind": "entity"}], prefix="copied_")
+        self.assertEqual(len(result["copied"]), 2)
+        source = self.project.object(
+            "destination.vmf", result["copied"][0]["destination_id"], "entity"
+        )["source"]
+        self.assertIn('"targetname" "climb_teleport"', source)
+        self.assertIn('"climb_teleport_destination" "copied_landing"', source)
+        self.assertEqual(
+            self.project.object("destination.vmf", 1, "world")["properties"][
+                "climb_mapping_api_version"
+            ],
+            "1",
+        )
+
+    def test_fgd_typed_output_parameters_remap_before_target_rename(self):
+        first = self.edit(
+            {
+                "op": "add_entity",
+                "classname": "logic_relay",
+                "origin": [0, 0, 0],
+                "properties": {"targetname": "a"},
+            }
+        )["results"][0]["ids"][0]
+        self.edit(
+            {
+                "op": "add_entity",
+                "classname": "logic_relay",
+                "origin": [0, 0, 0],
+                "properties": {"targetname": "b"},
+            }
+        )
+        self.edit(
+            {
+                "op": "add_entity",
+                "classname": "info_target",
+                "origin": [0, 0, 0],
+                "properties": {"targetname": "c"},
+            }
+        )
+        self.edit(
+            {
+                "op": "add_output",
+                "id": first,
+                "event": "OnTrigger",
+                "target": "b",
+                "input": "SetCustomParent",
+                "parameter": "c",
+            }
+        )
+        fgd = self.root / "custom.fgd"
+        fgd.write_text(
+            "@PointClass = logic_relay\n[\ninput SetCustomParent(target_destination)\n]\n"
+        )
+        result = self.copy(
+            [{"id": first, "kind": "entity"}],
+            prefix="copied_",
+            config={"fgd": str(fgd)},
+        )
+        self.assertEqual(len(result["copied"]), 3)
+        source = self.project.object(
+            "destination.vmf", result["copied"][0]["destination_id"], "entity"
+        )["source"]
+        self.assertIn("copied_b,SetCustomParent,copied_c", source)
+
+    def test_unknown_sides_property_is_preserved(self):
+        ent = self.edit(
+            {
+                "op": "add_entity",
+                "classname": "comp_prop_rope",
+                "origin": [0, 0, 0],
+                "properties": {"sides": "8"},
+            }
+        )["results"][0]["ids"][0]
+        result = self.copy([{"id": ent, "kind": "entity"}])
+        self.assertEqual(
+            self.project.object(
+                "destination.vmf", result["copied"][0]["destination_id"], "entity"
+            )["properties"]["sides"],
+            "8",
+        )
+
+    def test_face_reference_fields_remap_all_pinned_csgo_entities(self):
+        brush = self.edit({"op": "add_box", "min": [0, 0, 0], "max": [16, 16, 16]})[
+            "results"
+        ][0]["ids"][0]
+        face = self.project.object("source.vmf", brush, "solid")["side_ids"][0]
+        selection = [{"id": brush, "kind": "solid"}]
+        for classname in (
+            "info_overlay",
+            "env_cubemap",
+            "info_no_dynamic_shadow",
+            "info_overlay_transition",
+        ):
+            properties = {"sides": str(face)}
+            if classname == "info_overlay_transition":
+                properties["sides2"] = str(face)
+            ent = self.edit(
+                {
+                    "op": "add_entity",
+                    "classname": classname,
+                    "origin": [0, 0, 0],
+                    "properties": properties,
+                }
+            )["results"][0]["ids"][0]
+            selection.append({"id": ent, "kind": "entity"})
+        result = self.copy(selection)
+        newface = self.project.object(
+            "destination.vmf", result["copied"][0]["destination_id"], "solid"
+        )["side_ids"][0]
+        self.assertNotEqual(face, newface)
+        for row in result["copied"][1:]:
+            properties = self.project.object(
+                "destination.vmf", row["destination_id"], "entity"
+            )["properties"]
+            self.assertEqual(properties["sides"], str(newface))
+            if "sides2" in properties:
+                self.assertEqual(properties["sides2"], str(newface))
+
+    def test_native_failure_uses_structured_backend_error(self):
+        from cli_anything.hammerplusplus import desktop, backend
+
+        with patch.object(
+            desktop, "inspect_editor", side_effect=RuntimeError("stale handle")
+        ):
+            with self.assertRaisesRegex(backend.BackendError, "stale handle"):
+                api.execute(self.project, {}, "inspect_editor", {"pid": 123})
+
     def test_copy_dry_run_stale_source_and_typed_ids(self):
         result = self.edit({"op": "add_box", "min": [0, 0, 0], "max": [16, 16, 16]})
         brush = result["results"][0]["ids"][0]
@@ -250,6 +448,48 @@ class ReferenceTests(unittest.TestCase):
             reference.import_map(self.project, config, str(path), "reference.vmf")
         self.assertFalse((self.root / "reference.vmf").exists())
         self.assertFalse((self.root / ".hammer-agent/imports/escape.vmt").exists())
+
+    def test_conflicting_embedded_asset_is_rejected_before_map_or_mount_changes(self):
+        path, config = self.fake_bsp({"materials/custom/test.vmt": b"incoming"})
+        with patch.object(reference.subprocess, "run", self.decompile):
+            imported = reference.import_map(
+                self.project, config, str(path), "reference.vmf"
+            )
+        source = (
+            self.project.source("reference.vmf")["source"]
+            + '\nentity { "id" "2" "classname" "info_target" "origin" "0 0 0" }'
+        )
+        changed = self.project.apply(
+            "reference.vmf",
+            imported["revision"],
+            [{"op": "replace_source", "source": source}],
+        )
+        game = self.root / "game"
+        (game / "materials/custom").mkdir(parents=True)
+        (game / "materials/custom/test.vmt").write_bytes(b"existing")
+        info = game / "gameinfo.txt"
+        info.write_text(
+            'GameInfo { FileSystem { SearchPaths { Game "'
+            + str(game).replace("\\", "/")
+            + '" } } }'
+        )
+        config["game_dir"] = str(game)
+        before = info.read_bytes()
+        revision = self.revision("destination.vmf")
+        with self.assertRaisesRegex(
+            vmf.MapError, "Embedded asset conflict: materials/custom/test.vmt"
+        ):
+            reference.copy_objects(
+                self.project,
+                "reference.vmf",
+                "destination.vmf",
+                changed["revision"],
+                revision,
+                [{"id": 2, "kind": "entity"}],
+                config=config,
+            )
+        self.assertEqual(info.read_bytes(), before)
+        self.assertEqual(self.revision("destination.vmf"), revision)
 
     def test_api_publishes_all_reference_tools_with_schema_validation(self):
         for name in (
