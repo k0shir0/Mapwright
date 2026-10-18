@@ -3,6 +3,7 @@ import json
 import os
 from pathlib import Path
 import struct
+import subprocess
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -221,12 +222,26 @@ class ProjectTests(unittest.TestCase):
 
     def test_symlink_escape(self):
         with tempfile.TemporaryDirectory(dir=TEST_ROOT) as external:
+            link = self.root / "link"
             try:
-                (self.root / "link").symlink_to(external, target_is_directory=True)
+                link.symlink_to(external, target_is_directory=True)
             except OSError:
-                self.skipTest("Host does not permit symlink creation")
-            with self.assertRaisesRegex(vmf.MapError, "inside"):
-                self.project.create("link/escape.vmf")
+                if os.name != "nt":
+                    self.skipTest("Host does not permit symlink creation")
+                result = subprocess.run(
+                    ["cmd.exe", "/d", "/c", "mklink", "/J", str(link), external],
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+            try:
+                with self.assertRaisesRegex(vmf.MapError, "inside"):
+                    self.project.create("link/escape.vmf")
+            finally:
+                if link.is_symlink():
+                    link.unlink()
+                else:
+                    link.rmdir()
 
     def test_schema_validation_at_shared_boundary(self):
         for args in (

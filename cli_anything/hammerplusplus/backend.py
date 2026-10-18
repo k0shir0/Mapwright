@@ -13,7 +13,7 @@ import time
 import uuid
 
 from .project import Project, atomic_write, digest
-from .vmf import MapError
+from .vmf import MapError, validate
 
 
 class BackendError(MapError):
@@ -187,10 +187,10 @@ def compile_map(
         raise MapError(
             "mode must be bsp, fast or full; timeout between 1 and 3600 seconds"
         )
-    source, data, _, _ = project.read(name)
+    source, data, text, _ = project.read(name)
     if digest(data) != expected_revision:
         raise MapError("Revision conflict; inspect the map again before compiling")
-    validation = project.validate(name)
+    validation = validate(text)
     if not validation["valid"]:
         raise MapError("Cannot compile structurally invalid VMF")
     game = require_game(project, config)

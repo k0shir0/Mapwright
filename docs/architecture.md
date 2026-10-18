@@ -8,7 +8,7 @@ build is frozen at 8864. CS2 VMAP and Source 2 tools are incompatible.
 Apply CLI-Anything's harness workflow: inspect the real backend and document
 its data model, expose discoverable JSON commands, edit native project files,
 then invoke the actual editor and Valve compilers for backend verification.
-The Python core uses the standard library. The optional MCP transport uses
+The Python core uses the standard library with JSON Schema validation. The optional MCP transport uses
 the official Python MCP SDK. The CLI and MCP call the same project methods.
 
 VMF is the reliable map authoring interface. A source-span KeyValues parser

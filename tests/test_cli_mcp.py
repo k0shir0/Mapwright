@@ -161,6 +161,7 @@ class CLITests(unittest.TestCase):
                         "inspect_map", {"path": "mcp.vmf", "limit": False}
                     )
                     self.assertTrue(malformed.isError)
+                    self.assertFalse(json.loads(malformed.content[0].text)["ok"])
 
         anyio.run(scenario)
 

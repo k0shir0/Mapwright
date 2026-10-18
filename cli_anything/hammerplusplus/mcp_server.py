@@ -40,7 +40,7 @@ def serve(project: Project, config: dict):
             for name, tool in TOOLS.items()
         ]
 
-    @server.call_tool()
+    @server.call_tool(validate_input=False)
     async def call_tool(name, arguments):
         try:
             if name not in TOOLS:
