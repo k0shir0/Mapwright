@@ -12,6 +12,9 @@ from .backend import BackendError, require_tool
 def application(project, config, pid):
     if os.name != "nt":
         raise BackendError("Native Hammer++ interaction requires Windows")
+    from .windows import set_dpi_awareness
+
+    set_dpi_awareness()
     try:
         from pywinauto import Application
         import win32api, win32con, win32process
@@ -67,6 +70,7 @@ def menu_items(handle, depth=0):
                 "label": label.value,
                 "id": user.GetMenuItemID(handle, index),
                 "enabled": not bool(state & 3),
+                "checked": bool(state & 8),
                 "items": menu_items(sub, depth + 1),
             }
         )
@@ -167,6 +171,7 @@ def editor_action(
     end_x: int = 0,
     end_y: int = 0,
     button: str = "left",
+    steps: int = 1,
 ):
     app = application(project, config, pid)
     import win32gui, win32process
@@ -218,7 +223,7 @@ def editor_action(
             target.select(text)
         elif action == "invoke":
             target.click_input()
-        elif action in ("click", "double_click", "drag"):
+        elif action in ("click", "double_click", "drag", "scroll"):
             rect = target.client_rect()
             points = [(x, y)] + ([(end_x, end_y)] if action == "drag" else [])
             if any(
@@ -228,7 +233,9 @@ def editor_action(
                 raise BackendError(
                     "Mouse coordinates must stay inside the selected editor control"
                 )
-            if action == "drag":
+            if action == "scroll":
+                target.wheel_mouse_input(coords=(x, y), wheel_dist=steps)
+            elif action == "drag":
                 target.drag_mouse_input(button=button, src=(x, y), dst=(end_x, end_y))
             else:
                 target.click_input(

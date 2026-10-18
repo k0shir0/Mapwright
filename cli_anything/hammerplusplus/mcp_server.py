@@ -42,7 +42,7 @@ def serve(project: Project, config: dict):
                 annotations=ToolAnnotations(
                     readOnlyHint=tool["readonly"],
                     destructiveHint=not tool["readonly"],
-                    openWorldHint=False,
+                    openWorldHint=name in ("import_reference_map", "editor_action"),
                 ),
             )
             for name, tool in TOOLS.items()

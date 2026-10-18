@@ -7,6 +7,21 @@ from .project import Project
 from .vmf import MapError
 
 
+def game_filesystem(game):
+    source_tools()
+    from srctools.game import Game
+    from srctools.filesys import FileSystemChain, RawFileSystem, VPKFileSystem
+
+    try:
+        return Game(game).get_filesystem()
+    except KeyError:
+        # Minimal gameinfo fixtures and older custom projects may omit SearchPaths.
+        return FileSystemChain(
+            *(VPKFileSystem(p) for p in sorted(game.glob("*_dir.vpk"))),
+            RawFileSystem(game),
+        )
+
+
 def source_tools():
     try:
         from srctools.fgd import FGD
@@ -116,16 +131,14 @@ def assets(
                 reference = name
             matches.setdefault(reference, source)
 
-    loose = game / folder
-    if loose.is_dir():
-        for path in loose.rglob("*" + suffix):
-            if path.is_file():
-                add(path.relative_to(game).as_posix(), "loose")
-    archives = sorted(game.glob("*_dir.vpk"))
-    for archive in archives:
-        with VPK(archive, mode="r") as vpk:
-            for entry in vpk:
-                add(entry.filename, archive.name)
+    filesystem = game_filesystem(game)
+    for file in filesystem.walk_folder(folder):
+        add(file.path, str(filesystem.get_system(file).path))
+    archives = [
+        str(provider.path)
+        for provider, _ in filesystem.systems
+        if str(provider.path).lower().endswith(".vpk")
+    ]
     names = sorted(matches)
     return {
         "kind": kind,
@@ -133,6 +146,6 @@ def assets(
         "truncated": len(names) > limit,
         "assets": [{"name": name, "source": matches[name]} for name in names[:limit]],
         "scope": str(game),
-        "archives": [path.name for path in archives],
-        "limitations": "Indexes this game directory and its VPK directories. Mounted search paths and material rendering are not inspected.",
+        "archives": archives,
+        "limitations": "Indexes configured gameinfo search paths and VPK directories through srctools. This does not prove rendering or inspect material dependency content.",
     }

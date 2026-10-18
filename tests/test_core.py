@@ -369,7 +369,9 @@ class ProjectTests(unittest.TestCase):
         self.assertEqual(result["inputs"][0]["name"], "Trigger")
         game = self.root / "game"
         game.mkdir()
-        (game / "gameinfo.txt").write_text("test")
+        (game / "gameinfo.txt").write_text(
+            'GameInfo\n{\nFileSystem\n{\nSearchPaths\n{\nGame "|gameinfo_path|."\n}\n}\n}\n'
+        )
         with VPK(game / "pak01_dir.vpk", mode="w") as vpk:
             vpk.add_file("materials/dev/test.vmt", b"UnlitGeneric {}")
             vpk.add_file("models/test.mdl", b"test")
