@@ -26,7 +26,9 @@ in the actual Hammer++ editor and capture its window where dependencies allow.
 
 Record actual results and unresolved backend requirements below after checks.
 
-## Results, 2026-10-18
+## Initial results, 2026-10-18, before toolchain installation
+
+Historical results below are superseded by the follow-up verification section.
 
 Windows, Python 3.11.9, MCP SDK 1.26.0, srctools 2.7.0.
 Installed commands were required through CLI_ANYTHING_FORCE_INSTALLED=1.
@@ -81,15 +83,54 @@ skill validation, installed-CLI demo from outside the checkout, actual REA
 PE resource inspection through the bridge, and material lookup against the
 installed CS:GO pak01_dir.vpk (two matching development materials).
 
-The actual backend verification script exited 1: vbsp is missing. No BSP
-compilation, editor launch, editor capture or in-game playability is verified.
-Mocked compiler tests above check failure handling and staging only.
-Cross-platform CI is configured separately and was pending at this local run.
+At the initial 32-test run, the backend script failed because VBSP was missing.
+That historical limitation was resolved by the actual toolchain follow-up
+below. In-game playability remains unverified. Mocked compiler tests check
+failure handling and staging, separately from actual native verification.
 
 ## GitHub Actions
 
-The [first published CI run](https://github.com/k0shir0/hammerplusplus-agent/actions/runs/39155488502)
+The [first published CI run](https://github.com/k0shir0/Mapwright/actions/runs/39155488502)
 passed on Windows and Ubuntu with Python 3.11 and 3.13 at commit `399870b`.
 CI reported deprecated Node 20 action runtimes. The workflow was updated to
 the verified official checkout v7.0.1 and setup-python v7.0.0 commits, both
 using Node 24; the follow-up run is attached to PR #1.
+
+## Reference and editor follow-up, 2026-10-18
+
+50 tests passed, zero skipped, in 24.203 seconds on Windows/Python 3.11.9.
+The installed CLI was required. The actual MCP stdio test now includes
+reference import/search/copy and recoverable file deletion/restoration.
+Regressions cover raw source editing/undo, stale source revisions, linked
+entity names and repeated outputs, FGD-typed entity input parameters,
+GOKZ protocol names/teleport destinations, all pinned CS:GO sidelist entities,
+displacement start translation, safe embedded asset extraction, collision
+refusal before map/config mutation, and native error normalization.
+
+Actual integration work is separate from mocked compiler unit tests:
+`scripts/setup_local.py` installed the isolated toolchain; actual MCP calls
+decompiled an installed KZ BSP, copied two tile brushes into a room, and invoked
+VBSP++/VVIS++/VRAD++ to create a fresh version-21 HDR BSP. Hammer++ visibly
+rendered the copied item, independently reported 8 solids/3 point entities/48
+faces, saved a separate VMF through its native dialog, and reopened it. The
+saved file validated with the expected counts. Mounted VPK and complete FGD
+catalog calls succeeded. See [verification.md](../docs/verification.md) for
+local evidence locations and reproduction commands.
+
+## KZ research implementation
+
+69 tests passed, zero skipped, in 42.439 seconds on Windows/Python 3.11.9
+with `CLI_ANYTHING_FORCE_INSTALLED=1`. New behavior checks cover GOKZ contract
+typos/pairs/flags, anti-bhop thickness/clearance/delay, teleport types/options,
+box/top-face measurement, plane-point versus vertex bounds, water/ladder and
+headroom rules, unsupported geometry, compiled coordinate bounds and finite
+JSON inputs. Workspace tests cover cross-map success/failure logs and source
+redaction, folder restoration, stale revisions, reverse checkpoints, checksum
+failure and interrupted-batch resume with external-edit refusal.
+
+Actual MCP sessions verify resources/templates/prompts, output schemas,
+annotations, progress callbacks and successful check calls with invalid
+findings. The setup merge regression preserves original FGD fields/comments
+when stock base names are absent. Black, compileall and skill validation ran.
+The actual KZ MCP/compiler/BSP-entity lane is recorded in
+[verification.md](../docs/verification.md); it does not certify gameplay.

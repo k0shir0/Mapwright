@@ -22,8 +22,12 @@ class BackendError(MapError):
         self.details = details or {}
 
 
-def load_config(project: Project, name: str = "hammer-agent.local.json") -> dict:
+def load_config(project: Project, name: str = "mapwright.local.json") -> dict:
     path = project.confined(name)
+    if not path.exists() and name == "mapwright.local.json":
+        legacy_path = project.confined("hammer-agent.local.json")
+        if legacy_path.exists():
+            path = legacy_path
     if not path.exists():
         return {}
     config = json.loads(path.read_text("utf-8-sig"))
@@ -37,18 +41,41 @@ def load_config(project: Project, name: str = "hammer-agent.local.json") -> dict
         "rea",
         "bspsrc_java",
     }:
-        raise MapError("Invalid configuration keys; see hammer-agent.example.json")
-    if any(not isinstance(value, str) or not value for value in config.values()):
+        raise MapError("Invalid configuration keys; see mapwright.example.json")
+    if any(
+        not isinstance(value, str) or not value
+        for key, value in config.items()
+        if key != "fgd"
+    ) or (
+        "fgd" in config
+        and not (
+            isinstance(config["fgd"], str)
+            and config["fgd"]
+            or isinstance(config["fgd"], list)
+            and config["fgd"]
+            and all(isinstance(v, str) and v for v in config["fgd"])
+        )
+    ):
         raise MapError("Configured paths must be nonempty strings")
     return config
 
 
 def configured_path(project: Project, config: dict, key: str) -> Path | None:
     value = config.get(key)
+    if key == "fgd" and isinstance(value, list):
+        value = value[0] if value else None
     if not value:
         return None
     path = Path(value).expanduser()
     return (project.root / path).resolve()
+
+
+def fgd_paths(project: Project, config: dict) -> list[Path]:
+    values = config.get("fgd", [])
+    return [
+        (project.root / Path(v).expanduser()).resolve()
+        for v in ([values] if isinstance(values, str) else values)
+    ]
 
 
 def doctor(project: Project, config: dict) -> dict:
@@ -110,6 +137,11 @@ def doctor(project: Project, config: dict) -> dict:
         and all(reports[key]["exists"] for key in ("vbsp", "vvis", "vrad")),
         "candidates": candidates,
         "decompile_ready": reports["bspsrc_java"]["exists"],
+        "fgds": [
+            {"path": str(p), "exists": p.is_file()} for p in fgd_paths(project, config)
+        ],
+        "fgd_ready": bool(fgd_paths(project, config))
+        and all(p.is_file() for p in fgd_paths(project, config)),
         "readiness_scope": "Paths and prerequisites only; verify actual compilation, decompilation and visible editor rendering separately.",
         "setup": "Use scripts/setup_local.py with an owned legacy CS:GO runtime, or install the legacy CS:GO SDK through Steam. Tools++ supports Source 1 CS:GO. CS2 tools cannot compile VMF.",
     }
@@ -119,7 +151,7 @@ def require_tool(project: Project, config: dict, key: str) -> Path:
     path = configured_path(project, config, key)
     if not path or not path.is_file():
         raise BackendError(
-            f"{key} is missing; configure its Source 1 path in hammer-agent.local.json"
+            f"{key} is missing; configure its Source 1 path in mapwright.local.json"
         )
     if path.suffix.lower() in (".bat", ".cmd", ".ps1"):
         raise BackendError("Backend tools must be executables, not shell scripts")
@@ -289,12 +321,19 @@ def open_editor(project: Project, config: dict, name: str) -> dict:
     if not report["editor_ready"]:
         raise BackendError("Hammer++ SDK dependencies are missing", report)
     args = [str(exe), "-game", str(game), str(path)]
+    startup = {}
+    if os.name == "nt":
+        info = subprocess.STARTUPINFO()
+        info.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+        info.wShowWindow = 1  # SW_SHOWNORMAL: hidden agent shells otherwise create broken/minimized viewports.
+        startup["startupinfo"] = info
     process = subprocess.Popen(
         args,
         cwd=exe.parent,
         stdin=subprocess.DEVNULL,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
+        **startup,
     )
     time.sleep(0.5)
     if process.poll() is not None:

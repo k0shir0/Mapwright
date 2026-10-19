@@ -6,6 +6,7 @@ __pycache__/
 build/
 dist/
 .hammer-agent/
+mapwright.local.json
 hammer-agent.local.json
 *.bsp
 *.prt

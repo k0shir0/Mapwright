@@ -1,5 +1,8 @@
 # Upstream evidence, 2026-10-18
 
+The initial discovery below predates the completed local installation.
+[verification.md](verification.md) records current editor/compiler results.
+
 ## CLI-Anything
 
 Read and locally checked out the
@@ -68,6 +71,8 @@ The implementation uses the documented
 as its authoring boundary. This work did not discover or verify a live
 Hammer++ editing protocol. Future live integration needs exact-build evidence
 and actual editor tests; no offsets or unsupported command IDs are assumed.
+The follow-up uses observed native Win32 menus, controls and input with
+PID/executable checks, without undocumented binary offsets.
 
 ## Bridge integration checks
 
@@ -77,3 +82,26 @@ installed CS:GO VPK directories and located `dev/dev_measuregeneric01` and
 `dev/dev_measuregeneric01b` in `pak01_dir.vpk`; no assets were extracted.
 The generated test-room material therefore exists in the inspected local
 content. This is an inventory check, not a texture-rendering test.
+
+## Follow-up installation and reference maps
+
+Verified [standalone Tools++ installation and CS:GO support](https://ficool2.github.io/HammerPlusPlus-Website/tools.html).
+The local pinned Windows archive is dated 2026-10-03. Actual VBSP++/VVIS++/VRAD++
+compilation, including CS:GO HDR lighting, succeeded. These binaries are not
+redistributed in Git.
+
+Installed [BSPSource 1.4.8](https://github.com/ata4/bspsrc/releases/tag/v1.4.8)
+with bundled Java, exercised its actual CLI and decompiled an installed KZ BSP.
+This reconstructs authoring data without perfectly recovering the original VMF.
+The importer retains provenance and safely extracts embedded assets.
+
+The first generated srctools engine FGD lacked editor model/icon helpers.
+Replaced it with the maintainer's complete published
+[HammerAddons 2.6.0 FGD and editor assets](https://github.com/TeamSpen210/HammerAddons/releases/tag/v2.6.0).
+Actual Hammer++ capture then showed the CS:GO team spawn models. The installer
+does not install or run HammerAddons' optional postcompiler.
+
+Consulted [GOKZ's Mapping API](https://github.com/KZGlobalTeam/gokz/wiki/Mapping-API)
+to preserve reserved trigger/course names and teleport destinations when copying.
+Regressions cover these transfer semantics; an actual GOKZ server playtest
+has not been performed.

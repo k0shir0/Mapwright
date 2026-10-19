@@ -3,15 +3,15 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "cli-anything-hammerplusplus"
+name = "mapwright"
 version = "0.2.0"
-description = "Local CLI and MCP tools for legacy CS:GO Hammer++ mapping"
+description = "Mapwright CLI and MCP tools for legacy CS:GO mapping in Hammer++"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = ["jsonschema>=4.23,<5"]
 
 [project.urls]
-Repository = "https://github.com/k0shir0/hammerplusplus-agent"
+Repository = "https://github.com/k0shir0/Mapwright"
 
 [tool.black]
 target-version = ["py311"]
@@ -22,8 +22,7 @@ source = ["srctools>=2.7,<3"]
 desktop = ["pywinauto>=0.6.9,<0.7; sys_platform == 'win32'", "Pillow>=10; sys_platform == 'win32'"]
 
 [project.scripts]
-hammer-agent = "cli_anything.hammerplusplus.cli:entrypoint"
-cli-anything-hammerplusplus = "cli_anything.hammerplusplus.cli:entrypoint"
+mapwright = "cli_anything.hammerplusplus.cli:entrypoint"
 
 [tool.setuptools.packages.find]
 include = ["cli_anything*"]

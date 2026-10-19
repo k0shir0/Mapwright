@@ -36,3 +36,25 @@ real editor/compiler lane remains explicitly disclosed in the requirements.
 Summary: three original findings per axis, including one P1 in each; all
 resolved and covered by the parent's successful 32-test suite. Neither
 review establishes actual editor rendering or in-game playability.
+
+## Reference-map follow-up review
+
+The same independent GPT-6.1 SOL/xhigh reviewers examined changes since
+`42e432a`, including the installer and updated requirements.
+
+Standards: fixed embedded asset precedence/conflicts by comparing hashes
+against all mounted providers before publishing, prepending safe mounts, and
+checking the gameinfo snapshot under lock. Fixed omitted CS:GO sidelist fields,
+including info_no_dynamic_shadow.sides and info_overlay_transition.sides2,
+while preserving unrelated numeric sides properties. The reviewer independently
+probed all face classes and confirmed the final snapshot ordering.
+
+Spec: fixed entity-valued output parameters and their dependency closure,
+including FGD-defined inputs, and normalized native PID/handle failures into
+the shared JSON error contract. A second probe caught source-FGD lookup after
+target renaming; the type is now captured before rewriting. The reviewer
+confirmed both fixes. Also preserved documented GOKZ protocol names and
+teleport links, with regressions.
+
+No remaining concrete finding in the reviewed fixes. The parent ran the
+50-test suite and actual editor/compiler verification separately.

@@ -1,4 +1,4 @@
-# Hammer++ agent bridge
+# Mapwright architecture
 
 Target: legacy CS:GO, Source 1 VMF and VBSP. The official Hammer++ CS:GO
 build is frozen at 8864. CS2 VMAP and Source 2 tools are incompatible.

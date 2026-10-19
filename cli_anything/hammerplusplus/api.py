@@ -1,6 +1,8 @@
 """One discoverable command contract shared by the CLI and MCP transport."""
 
 import jsonschema
+import time
+import uuid
 
 from . import backend, catalog
 from .project import Project
@@ -12,6 +14,10 @@ VECTOR = {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems
 PROPERTIES = {
     "type": "object",
     "additionalProperties": {"type": ["string", "number", "null"]},
+}
+ENTITY_PROPERTIES = {
+    "type": "object",
+    "additionalProperties": {"type": ["string", "number"]},
 }
 REVISION = {
     "type": "string",
@@ -46,6 +52,13 @@ OPERATIONS = {
                 "min": VECTOR,
                 "max": VECTOR,
                 "material": STRING,
+                "face_materials": schema(
+                    {
+                        k: STRING
+                        for k in ("top", "bottom", "south", "north", "west", "east")
+                    },
+                    [],
+                ),
                 "parent_id": INTEGER,
                 "parent_kind": {"enum": ["world", "entity"]},
             },
@@ -63,7 +76,7 @@ OPERATIONS = {
         ),
         operation(
             "add_entity",
-            {"classname": STRING, "origin": VECTOR, "properties": PROPERTIES},
+            {"classname": STRING, "origin": VECTOR, "properties": ENTITY_PROPERTIES},
             ["classname", "origin"],
         ),
         operation(
@@ -133,7 +146,7 @@ TOOLS = {
         False,
     ),
     "import_reference_map": spec(
-        "Import an explicitly supplied external VMF or CS:GO BSP. BSPSource decompiles BSP to VMF; embedded assets are safely extracted locally. Returns provenance and reconstruction limits.",
+        "Import an external VMF or CS:GO BSP to a new VMF. BSP inputs require configured bspsrc_java (BSPSource bundled Java). Assets extract locally; returns provenance and reconstruction limits.",
         {
             "source": STRING,
             "output": MAP,
@@ -143,7 +156,7 @@ TOOLS = {
         False,
     ),
     "search_reference_map": spec(
-        "Find reference-map entities and world brushes by text in names/materials/properties and optional spatial bounds. Use this evidence to resolve the user plain-language item description before copying.",
+        "Search raw source text (including names, properties, coordinates and comments) of entities/world brushes, with optional spatial bounds. Resolve the user's item description before copying.",
         {
             "path": MAP,
             "query": STRING,
@@ -180,7 +193,7 @@ TOOLS = {
         False,
     ),
     "inspect_editor": spec(
-        "Inspect the actual configured Hammer++ PID: menus, enabled commands, windows, dialogs and controls. Native UI fallback for all editor features, including those without dedicated VMF helpers.",
+        "Inspect actual Hammer++ menus, windows and controls by verified PID. Windows and desktop extra required. Native UI fallback; inspect enabled dialogs before acting.",
         {
             "pid": {"type": "integer", "minimum": 1},
             "limit": {"type": "integer", "minimum": 1, "maximum": 1000},
@@ -188,7 +201,7 @@ TOOLS = {
         ["pid"],
     ),
     "editor_action": spec(
-        "Interact with the actual editor using discovered menu paths/control handles, keyboard, mouse, text, combo selection, drag or window actions. GUI changes/saves act inside Hammer++; inspect state and rendered capture afterward.",
+        "Dispatch native Hammer++ actions using inspected labels/owned handles. Windows and desktop extra required. Checkpoint saved map files before GUI edits; unsaved GUI state requires Hammer undo. Verify state and capture afterward.",
         {
             "pid": {"type": "integer", "minimum": 1},
             "action": {
@@ -229,7 +242,10 @@ TOOLS = {
     ),
     "create_map": spec(
         "Create a new native VMF, refusing overwrite. csgo-room is an enclosed test room with team spawns and light.",
-        {"path": MAP, "template": {"enum": ["empty", "csgo-room"], "default": "empty"}},
+        {
+            "path": MAP,
+            "template": {"enum": ["empty", "csgo-room", "kz-room"], "default": "empty"},
+        },
         ["path"],
         False,
     ),
@@ -253,7 +269,7 @@ TOOLS = {
         ["path"],
     ),
     "edit_map": spec(
-        "Apply an atomic batch to the inspected revision. Unknown blocks and comments remain intact. dry_run returns proposed IDs/hash without publishing. add_room min/max are interior bounds. parent_id adds a brush to an existing entity.",
+        "Apply an atomic revision-checked batch. Targeted operations preserve untouched source; replace_source replaces the whole document. dry_run previews IDs/hash. Prefer flat map_* tools for single operations. Room bounds are interior; parent_id attaches a brush.",
         {
             "path": MAP,
             "expected_revision": REVISION,
@@ -301,7 +317,7 @@ TOOLS = {
         False,
     ),
     "capture_editor": spec(
-        "Capture a specific configured Hammer++ process window to a new workspace PNG on Windows. Inspect the returned image for visual evidence.",
+        "Capture configured Hammer++ to a new PNG on Windows. window uses PrintWindow (GPU viewports may be blank); screen requires desktop extra and an unobscured window. Inspect the image for actual rendering.",
         {
             "pid": {"type": "integer", "minimum": 1},
             "output": STRING,
@@ -335,8 +351,222 @@ TOOLS = {
     ),
 }
 
+PAGE = {
+    "offset": {"type": "integer", "minimum": 0},
+    "limit": {"type": "integer", "minimum": 1, "maximum": 1000},
+}
+SELECTOR = schema({"id": INTEGER, "kind": {"enum": ["solid", "side"]}}, ["id"])
+KZ_TOOLS = {
+    "kz_audit": (
+        "audit",
+        "Audit GOKZ main/bonus timers, exact names, flags, starts, teleports, anti-bhop, ladders, water and spawns.",
+    ),
+    "kz_check_antibhop": (
+        "antibhop",
+        "Check >=16u anti-bhop volume thickness, delay and >=4u destination floor clearance.",
+    ),
+    "kz_check_bhop": (
+        "bhop",
+        "Check GOKZ teleport types/delays and optionally ordered landing-block route gaps/reset-ground candidates.",
+    ),
+    "kz_measure_jumps": (
+        "measure",
+        "Measure edge gap/delta-z between box solids or top sides; report jumpstat geometry and server thresholds, not reachability.",
+    ),
+    "kz_check_headhitter": (
+        "headhitter",
+        "Find box floor/ceiling clearances, optionally along a selected jump corridor; report headhit jumpstat context.",
+    ),
+    "kz_check_ladders": (
+        "ladders",
+        "Inspect invisible-ladder material, ownership and optional LAJ landing height; in-game zero-offset verification still required.",
+    ),
+    "kz_check_water": (
+        "water",
+        "Check rectangular level water, top-only material, nodraw sides, ownership, skyname and LOD context.",
+    ),
+    "kz_check_teleports": (
+        "teleports",
+        "Resolve GOKZ/native teleport destinations and summarize angle, speed, relative/reorient behavior.",
+    ),
+    "kz_spawn_check": (
+        "spawns",
+        "Check team spawn presence/parity, brush hull overlap, angles, ceilings and start zones.",
+    ),
+    "kz_test_plan": (
+        "test_plan",
+        "Return an in-game GOKZ verification recipe tied to current VMF findings and revision.",
+    ),
+}
+for name, (check, description) in KZ_TOOLS.items():
+    props = {"path": MAP}
+    required = ["path"]
+    if check in ("measure", "headhitter"):
+        props.update(start=SELECTOR, end=SELECTOR)
+        if check == "measure":
+            required.extend(["start", "end"])
+    if check == "ladders":
+        props["landing"] = SELECTOR
+    if check in ("bhop", "measure"):
+        props["minimum_mbh"] = {"type": "number", "minimum": 0, "maximum": 500}
+    if check == "bhop":
+        props["route"] = {
+            "type": "array",
+            "items": SELECTOR,
+            "minItems": 2,
+            "maxItems": 100,
+        }
+    TOOLS[name] = spec(
+        description
+        + " Read-only VMF analysis; unsupported geometry is reported; compile/test in-game.",
+        props,
+        required,
+    )
 
-def execute(project: Project, config: dict, action: str, args: dict) -> dict:
+# Keep edit_map for atomic batches; individual tools avoid a large union schema.
+for op in OPERATIONS["oneOf"]:
+    name = op["properties"]["op"]["const"]
+    TOOLS["map_" + name] = spec(
+        "Apply one "
+        + name
+        + " operation with revision check, snapshots and dry-run. "
+        + (
+            "Replaces the entire source; inspect a checkpoint first."
+            if name == "replace_source"
+            else "See field schema; untouched bytes remain intact."
+        ),
+        {
+            "path": MAP,
+            "expected_revision": REVISION,
+            "dry_run": {"type": "boolean"},
+            **{k: v for k, v in op["properties"].items() if k != "op"},
+        },
+        ["path", "expected_revision", *[k for k in op["required"] if k != "op"]],
+        False,
+    )
+
+TOOLS.update(
+    {
+        "operation_log": spec(
+            "Read paginated workspace JSONL operation outcomes, timestamps, session/call IDs and errors. Logs rotate at 4 MiB; source bodies are hashed.",
+            PAGE,
+            [],
+        ),
+        "list_artifacts": spec(
+            "List history, snapshots, trash tokens, receipts/builds, imports and checkpoints without hiding bridge state.",
+            {**PAGE, "category": STRING},
+            [],
+        ),
+        "read_artifact": spec(
+            "Read a confined bridge artifact as bounded bytes/text or base64. Offsets are bytes; snapshots expose exact prior VMF source.",
+            {
+                "path": STRING,
+                "offset": {"type": "integer", "minimum": 0},
+                "limit": {"type": "integer", "minimum": 1, "maximum": 1000000},
+            },
+            ["path"],
+        ),
+        "create_checkpoint": spec(
+            "Snapshot explicit workspace files/folders, including saved maps, assets and local config. No overwrite. Limits 10000 files, 128 MiB/file, 512 MiB total. Unsaved GUI state is excluded.",
+            {
+                "paths": {
+                    "type": "array",
+                    "items": STRING,
+                    "minItems": 1,
+                    "maxItems": 100,
+                },
+                "label": STRING,
+            },
+            ["paths"],
+            False,
+        ),
+        "inspect_checkpoint": spec(
+            "Read a checkpoint and current revisions (including null for absent files); review changes before restoring.",
+            {"token": STRING},
+            ["token"],
+        ),
+        "restore_checkpoint": spec(
+            "Restore checkpoint files/folders after matching every inspected current revision. Keeps a reverse checkpoint and resumable receipt; multi-file restoration is recoverable, not atomic. dry_run previews.",
+            {
+                "token": STRING,
+                "expected_revisions": {
+                    "type": "object",
+                    "additionalProperties": {"anyOf": [REVISION, {"type": "null"}]},
+                },
+                "dry_run": {"type": "boolean"},
+            },
+            ["token", "expected_revisions"],
+            False,
+        ),
+        "resume_recovery": spec(
+            "Resume an interrupted checkpoint restore only if every file matches the receipt's before/after hashes. Refuses external changes.",
+            {"token": STRING},
+            ["token"],
+            False,
+        ),
+        "lock_status": spec(
+            "Inspect workspace write-lock owner, timestamp and process liveness without removing it.",
+            {},
+            [],
+        ),
+        "recover_lock": spec(
+            "Remove the unchanged inspected write lock only when its owner is confirmed dead. Ambiguous liveness fails closed.",
+            {"expected_revision": REVISION},
+            ["expected_revision"],
+            False,
+        ),
+    }
+)
+
+OUTPUT_SCHEMA = schema(
+    {
+        "ok": {"type": "boolean"},
+        "data": {"type": "object"},
+        "error": STRING,
+        "details": {"type": "object"},
+        "warnings": {"type": "array", "items": STRING},
+    },
+    ["ok"],
+)
+for name, tool in TOOLS.items():
+    tool["outputSchema"] = OUTPUT_SCHEMA
+    tool["destructive"] = (
+        name
+        in {
+            "delete_map_file",
+            "edit_map",
+            "undo_map",
+            "redo_map",
+            "copy_reference_objects",
+            "editor_action",
+            "restore_checkpoint",
+            "resume_recovery",
+            "recover_lock",
+        }
+        or name.startswith("map_")
+        and name != "map_history"
+    )
+    tool["openworld"] = name in {
+        "import_reference_map",
+        "compile_map",
+        "open_editor",
+        "inspect_editor",
+        "editor_action",
+        "capture_editor",
+        "rea_probe",
+        "entity_catalog",
+        "asset_catalog",
+        "doctor",
+    }
+
+
+def _execute(project: Project, config: dict, action: str, args: dict) -> dict:
+    import json
+
+    try:
+        json.dumps(args, allow_nan=False)
+    except (TypeError, ValueError) as exc:
+        raise MapError("Tool arguments must contain finite JSON values") from exc
     if action not in TOOLS:
         raise MapError(f"Unknown tool: {action}")
     try:
@@ -347,6 +577,46 @@ def execute(project: Project, config: dict, action: str, args: dict) -> dict:
         ) from exc
     values = dict(args)
     path = values.pop("path", None)
+    if action in KZ_TOOLS:
+        from . import kz
+
+        check = KZ_TOOLS[action][0]
+        return (
+            kz.test_plan(project, path)
+            if check == "test_plan"
+            else kz.run(project, path, check, **values)
+        )
+    if action.startswith("map_") and action != "map_history":
+        expected = values.pop("expected_revision")
+        dry = values.pop("dry_run", False)
+        return project.apply(path, expected, [{"op": action[4:], **values}], dry)
+    if action in {
+        "operation_log",
+        "list_artifacts",
+        "read_artifact",
+        "create_checkpoint",
+        "inspect_checkpoint",
+        "restore_checkpoint",
+        "resume_recovery",
+        "lock_status",
+        "recover_lock",
+    }:
+        from . import workspace
+
+        method = {
+            "operation_log": workspace.operations,
+            "list_artifacts": workspace.artifacts,
+            "read_artifact": workspace.read_artifact,
+            "create_checkpoint": workspace.checkpoint,
+            "inspect_checkpoint": workspace.checkpoint_status,
+            "restore_checkpoint": workspace.restore_checkpoint,
+            "resume_recovery": workspace.resume_recovery,
+            "lock_status": workspace.lock_status,
+            "recover_lock": workspace.recover_lock,
+        }[action]
+        if action == "read_artifact":
+            values["path"] = path
+        return method(project, **values)
     if action == "list_map_files":
         return project.files(**values)
     if action == "read_map_source":
@@ -412,3 +682,59 @@ def execute(project: Project, config: dict, action: str, args: dict) -> dict:
     if action == "asset_catalog":
         return catalog.assets(project, config, **values)
     return backend.rea_probe(project, config, **values)
+
+
+def execute(project: Project, config: dict, action: str, args: dict) -> dict:
+    from . import workspace
+
+    call_id = uuid.uuid4().hex
+    start = time.monotonic()
+    # Reading audit/recovery metadata remains a pure read and never logs itself.
+    record = action not in {
+        "operation_log",
+        "list_artifacts",
+        "read_artifact",
+        "inspect_checkpoint",
+        "lock_status",
+        "map_history",
+    }
+    event = {"call_id": call_id, "tool": action, **workspace.summary(args)}
+    warning = None
+
+    def write(status, **extra):
+        nonlocal warning
+        if record:
+            try:
+                workspace.log(project, {**event, "status": status, **extra})
+            except (OSError, ValueError) as exc:
+                warning = f"Operation audit unavailable: {exc}"
+
+    write("started")
+    try:
+        result = _execute(project, config, action, args)
+    except Exception as exc:
+        write(
+            "failed",
+            error=str(exc)[:4000],
+            elapsed_seconds=round(time.monotonic() - start, 3),
+        )
+        raise
+    write(
+        "completed",
+        revision=result.get("revision"),
+        **{
+            key: result[key]
+            for key in (
+                "token",
+                "reverse_checkpoint",
+                "recovery_token",
+                "valid",
+                "dry_run",
+            )
+            if key in result
+        },
+        elapsed_seconds=round(time.monotonic() - start, 3),
+    )
+    if warning:
+        result = {**result, "audit_warning": warning}
+    return result

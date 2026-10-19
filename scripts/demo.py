@@ -8,12 +8,12 @@ import tempfile
 
 
 def main():
-    cli = shutil.which("hammer-agent")
+    cli = shutil.which("mapwright")
     if not cli:
         raise SystemExit(
             "Install the package and put its Scripts/bin directory on PATH"
         )
-    workspace = Path(tempfile.mkdtemp(prefix="hammer-agent-demo-")).resolve()
+    workspace = Path(tempfile.mkdtemp(prefix="mapwright-demo-")).resolve()
 
     def call(*args):
         completed = subprocess.run(

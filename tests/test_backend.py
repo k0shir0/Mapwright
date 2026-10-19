@@ -37,6 +37,15 @@ class BackendTests(unittest.TestCase):
             path.write_bytes(b"not a real executable")
             self.config[tool] = str(path)
 
+    def test_mapwright_config_prefers_new_name_and_reads_legacy_name(self):
+        legacy = self.root / "hammer-agent.local.json"
+        legacy.write_text('{"game_dir":"legacy"}')
+        self.assertEqual(backend.load_config(self.project), {"game_dir": "legacy"})
+
+        current = self.root / "mapwright.local.json"
+        current.write_text('{"game_dir":"mapwright"}')
+        self.assertEqual(backend.load_config(self.project), {"game_dir": "mapwright"})
+
     def test_zero_exit_without_fresh_bsp_fails(self):
         class Process:
             def __init__(self, *args, **kwargs):

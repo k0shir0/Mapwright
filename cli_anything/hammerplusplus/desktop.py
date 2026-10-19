@@ -197,6 +197,18 @@ def editor_action(
             raise BackendError(
                 "Editor target is disabled, usually by a modal dialog; inspect and act on that dialog first"
             )
+        if action in ("keys", "click", "double_click", "drag", "scroll") or (
+            action == "invoke" and target.class_name() != "Button"
+        ):
+            target.set_focus()
+            foreground = win32gui.GetForegroundWindow()
+            if (
+                not foreground
+                or win32process.GetWindowThreadProcessId(foreground)[1] != pid
+            ):
+                raise BackendError(
+                    "Windows refused editor focus; input was not sent to another application"
+                )
         if action == "menu":
             items = menu_items(win32gui.GetMenu(target.handle))
             clean = (
@@ -222,7 +234,12 @@ def editor_action(
         elif action == "select":
             target.select(text)
         elif action == "invoke":
-            target.click_input()
+            if target.class_name() == "Button":
+                win32gui.PostMessage(
+                    target.handle, 0xF5, 0, 0
+                )  # BM_CLICK, independent of desktop DPI/focus.
+            else:
+                target.click_input()
         elif action in ("click", "double_click", "drag", "scroll"):
             rect = target.client_rect()
             points = [(x, y)] + ([(end_x, end_y)] if action == "drag" else [])
@@ -233,6 +250,14 @@ def editor_action(
                 raise BackendError(
                     "Mouse coordinates must stay inside the selected editor control"
                 )
+            for point in points:
+                hit = win32gui.WindowFromPoint(
+                    win32gui.ClientToScreen(target.handle, point)
+                )
+                if not hit or win32process.GetWindowThreadProcessId(hit)[1] != pid:
+                    raise BackendError(
+                        "Editor mouse target is occluded; input was not sent"
+                    )
             if action == "scroll":
                 target.wheel_mouse_input(coords=(x, y), wheel_dist=steps)
             elif action == "drag":

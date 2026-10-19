@@ -262,6 +262,10 @@ class ProjectTests(unittest.TestCase):
             ).encode(),
         )
         self.assertEqual(self.project.history("map.vmf")["position"], 1)
+        # History is a pure read; a writer reconciles the pending journal.
+        self.assertIn("pending", json.loads(journal.read_text()))
+        with self.project.locked():
+            self.project.load_history(self.root / "map.vmf")
         self.assertNotIn("pending", json.loads(journal.read_text()))
 
     def test_pending_journal_recovers_before_map_published(self):

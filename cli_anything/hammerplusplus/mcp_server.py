@@ -3,8 +3,10 @@
 from functools import partial
 import base64
 import json
+from urllib.parse import unquote
 
 from .api import TOOLS, execute
+from . import workspace, kz
 from . import __version__
 from .backend import BackendError
 from .project import Project
@@ -21,15 +23,30 @@ def serve(project: Project, config: dict):
             ImageContent,
             Tool,
             ToolAnnotations,
+            Resource,
+            ResourceTemplate,
+            Prompt,
+            PromptArgument,
+            PromptMessage,
+            GetPromptResult,
         )
+        from mcp.server.lowlevel.helper_types import ReadResourceContents
     except ImportError as exc:
         raise BackendError(
             'Install the MCP extra: python -m pip install -e ".[mcp]"'
         ) from exc
     server = Server(
-        "hammerplusplus-agent",
+        "mapwright",
         version=__version__,
-        instructions="Legacy CS:GO Source 1 mapping. Start with doctor and inspect_map. Pass the returned revision to edit_map. Use native compilers and editor captures before claiming playable or rendered results.",
+        instructions=(
+            "Mapwright is a KZ-first legacy CS:GO Source 1 bridge. Start with doctor and inspect_map; kz_audit and kz_test_plan explain KZ findings. "
+            "IDs have separate namespaces: supply kind when ambiguous. Pass the exact current revision to writes; dry_run previews. "
+            "Use flat map_* tools for single edits, edit_map for atomic batches; only replace_source replaces untouched source. "
+            "KZ behavior depends on exact climb_* names and GOKZ plugin settings. kz-room supplies main timer zones/course start. "
+            "Checkpoint saved files before GUI saves or multi-file changes; logs/artifacts expose recovery receipts and prior snapshots. "
+            "GUI actions return dispatched, not verified. Compile fresh, inspect actual captures, then test the intended GOKZ mode in-game. "
+            "Static checks cannot prove movement feasibility; unsupported geometry is reported. Read hammer://guide/kz for the workflow."
+        ),
     )
 
     @server.list_tools()
@@ -39,26 +56,155 @@ def serve(project: Project, config: dict):
                 name=name,
                 description=tool["description"],
                 inputSchema=tool["inputSchema"],
+                outputSchema=tool["outputSchema"],
                 annotations=ToolAnnotations(
                     readOnlyHint=tool["readonly"],
-                    destructiveHint=not tool["readonly"],
-                    openWorldHint=name in ("import_reference_map", "editor_action"),
+                    destructiveHint=tool["destructive"],
+                    idempotentHint=tool["readonly"],
+                    openWorldHint=tool["openworld"],
                 ),
             )
             for name, tool in TOOLS.items()
         ]
+
+    @server.list_resources()
+    async def list_resources():
+        return [
+            Resource(
+                uri="hammer://guide/kz",
+                name="KZ mapping workflow",
+                mimeType="text/markdown",
+            ),
+            Resource(
+                uri="hammer://workspace/artifacts",
+                name="Recovery artifact index",
+                mimeType="application/json",
+            ),
+            Resource(
+                uri="hammer://workspace/operations",
+                name="Recent workspace operation log",
+                mimeType="application/json",
+            ),
+        ]
+
+    @server.list_resource_templates()
+    async def list_resource_templates():
+        return [
+            ResourceTemplate(
+                uriTemplate="hammer://artifact/{path}",
+                name="Read workspace bridge artifact (URL-encoded path)",
+                mimeType="application/json",
+            )
+        ]
+
+    @server.read_resource()
+    async def read_resource(uri):
+        value = str(uri)
+        if value == "hammer://guide/kz":
+            return [ReadResourceContents(KZ_GUIDE, "text/markdown")]
+        if value == "hammer://workspace/artifacts":
+            result = await anyio.to_thread.run_sync(
+                partial(workspace.artifacts, project)
+            )
+        elif value == "hammer://workspace/operations":
+            result = await anyio.to_thread.run_sync(
+                partial(workspace.operations, project)
+            )
+        elif value.startswith("hammer://artifact/"):
+            path = unquote(value[len("hammer://artifact/") :])
+            result = await anyio.to_thread.run_sync(
+                partial(workspace.read_artifact, project, path)
+            )
+        else:
+            raise ValueError(
+                "Unknown resource; list resources and use the advertised artifact template"
+            )
+        return [
+            ReadResourceContents(
+                json.dumps(result, ensure_ascii=True), "application/json"
+            )
+        ]
+
+    @server.list_prompts()
+    async def list_prompts():
+        return [
+            Prompt(
+                name="kz_mapping_workflow",
+                description="Create/edit, audit, compile and verify a KZ map",
+                arguments=[
+                    PromptArgument(
+                        name="path", description="Workspace VMF path", required=True
+                    ),
+                    PromptArgument(
+                        name="task",
+                        description="Requested mapping change",
+                        required=False,
+                    ),
+                ],
+            )
+        ]
+
+    @server.get_prompt()
+    async def get_prompt(name, arguments):
+        if name != "kz_mapping_workflow" or not arguments or not arguments.get("path"):
+            raise ValueError("Use kz_mapping_workflow with path and optional task")
+        project.map_path(arguments["path"])
+        text = f"Work on {arguments['path']}. Requested change: {arguments.get('task','inspect and improve KZ mapping')}.\n{KZ_GUIDE}"
+        return GetPromptResult(
+            description="KZ map verification workflow",
+            messages=[
+                PromptMessage(role="user", content=TextContent(type="text", text=text))
+            ],
+        )
 
     @server.call_tool(validate_input=False)
     async def call_tool(name, arguments):
         try:
             if name not in TOOLS:
                 raise ValueError(f"Unknown tool: {name}")
-            data = await anyio.to_thread.run_sync(
-                partial(execute, project, config, name, arguments)
-            )
+            context = server.request_context
+            token = context.meta.progressToken if context.meta else None
+
+            async def progress():
+                tick = 0
+                while True:
+                    try:
+                        await context.session.send_progress_notification(
+                            token, tick, message=f"Running {name}"
+                        )
+                    except (
+                        OSError,
+                        RuntimeError,
+                        anyio.BrokenResourceError,
+                        anyio.ClosedResourceError,
+                    ):
+                        return
+                    tick += 1
+                    await anyio.sleep(2)
+
+            async with anyio.create_task_group() as group:
+                if token is not None and name in (
+                    "compile_map",
+                    "import_reference_map",
+                    "create_checkpoint",
+                    "restore_checkpoint",
+                ):
+                    group.start_soon(progress)
+                try:
+                    data = await anyio.to_thread.run_sync(
+                        partial(execute, project, config, name, arguments)
+                    )
+                except (ValueError, OSError, TypeError, KeyError, TimeoutError) as exc:
+                    # Catch inside the group: clients need a tool error, not ExceptionGroup.
+                    data = None
+                    failure = exc
+                else:
+                    failure = None
+                finally:
+                    group.cancel_scope.cancel()
+            if failure is not None:
+                raise failure
             result = {"ok": True, "data": data}
-            if name == "validate_map" and not data["valid"]:
-                result["ok"] = False
         except (ValueError, OSError, TypeError, KeyError, TimeoutError) as exc:
             result = {"ok": False, "error": str(exc)}
             if isinstance(exc, BackendError):
@@ -87,3 +233,25 @@ def serve(project: Project, config: dict):
             await server.run(read, write, server.create_initialization_options())
 
     anyio.run(run)
+
+
+KZ_GUIDE = """Read doctor and inspect_map. New KZ maps can use create_map template=kz-room.
+Inspect exact object IDs/kinds and the current revision. Use map_* tools for a single
+edit or edit_map for atomic batches, with expected_revision and optional dry_run.
+set_properties null removes a key; add_entity properties cannot be null.
+For ladders/water use add_box face_materials (top/bottom/north/south/east/west).
+Run validate_map and kz_audit; a successful check returns ok=true even with findings.
+Inspect data.valid, findings, complete and unsupported_geometry. Use kz_measure_jumps
+on solids/top faces, ordered kz_check_bhop routes, and corridor headhitter checks.
+KZ names are a plugin API: preserve climb_* names; enable button flags 1+32, trigger
+Clients=1, anti-bhop thickness >=16u, destination floor clearance >=4u, bhop delay >=0.08s.
+Create a named checkpoint before GUI saves; only saved files can be snapshotted.
+inspect_checkpoint lists every current revision needed for restore_checkpoint;
+restoration keeps a reverse checkpoint and resumable recovery receipt. Never overwrite
+external changes. operation_log, list_artifacts and read_artifact expose evidence.
+Import references to new VMFs, inspect actual selections, then copy with both revisions.
+Compile to a fresh BSP, inspect stage logs and real editor captures, then use kz_test_plan
+on the intended GOKZ mode/server. Process launch, structural validity and box geometry
+do not prove rendering, movement feasibility or playability. Unusual geometry needs
+manual/editor inspection. GOKZ zones are named Hammer entities, not an in-game zone editor.
+"""
