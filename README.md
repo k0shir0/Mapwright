@@ -1,4 +1,6 @@
-# Mapwright
+<p align="center">
+  <img src="docs/assets/mapwright-banner.png" alt="Mapwright" width="900">
+</p>
 
 Local CLI and stdio MCP for KZ mapping in legacy CS:GO Source 1 with Hammer++.
 Author VMFs, copy BSP/VMF sections, audit GOKZ entities, measure jumps, compile
