@@ -15,7 +15,11 @@ from mcp.client.stdio import stdio_client
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("source", help="Real legacy CS:GO BSP to decompile")
-    parser.add_argument("--workspace", default=".")
+    parser.add_argument(
+        "--workspace",
+        default=".",
+        help="Configured workspace for import, copy and compile artifacts (default: current directory)",
+    )
     parser.add_argument(
         "--solid",
         type=int,
@@ -23,7 +27,13 @@ def main():
         required=True,
         help="Source solid ID from an earlier search; repeat for the whole item",
     )
-    parser.add_argument("--delta", type=float, nargs=3, default=[0, 0, 0])
+    parser.add_argument(
+        "--delta",
+        type=float,
+        nargs=3,
+        default=[0, 0, 0],
+        help="Translation X Y Z applied to the copied solids (default: 0 0 0)",
+    )
     args = parser.parse_args()
     workspace = Path(args.workspace).resolve(strict=True)
     folder = ".local/reference-verification/" + uuid.uuid4().hex
