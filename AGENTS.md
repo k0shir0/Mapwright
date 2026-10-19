@@ -4,6 +4,8 @@ Target: KZ-first legacy CS:GO Source 1 VMF/VBSP and Hammer++.
 
 ## Context
 
+- Local MCP installation, client registration, or setup: read the
+  [setup skill](skills/mapwright-setup/SKILL.md) and run its automatic workflow.
 - Map authoring: [mapping skill](skills/mapwright/SKILL.md).
 - KZ behavior/checks: [KZ contract](docs/kz-mapping.md).
 - Backend installation/config: [setup](docs/setup.md).

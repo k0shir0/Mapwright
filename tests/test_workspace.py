@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 from cli_anything.hammerplusplus import workspace, vmf
 from cli_anything.hammerplusplus.api import execute
-from cli_anything.hammerplusplus.project import Project, digest, atomic_write
+from cli_anything.hammerplusplus.project import Project, digest
 
 RUNS = Path(__file__).resolve().parents[1] / ".local/test-runs"
 RUNS.mkdir(parents=True, exist_ok=True)
@@ -93,15 +93,15 @@ class WorkspaceTests(unittest.TestCase):
         self.write("maps/a", b"A")
         self.write("maps/b", b"B")
         state = workspace.checkpoint_status(self.project, cp["token"])
-        real = atomic_write
+        real = workspace.restore_saved_file
 
-        def fail(path, *args, **kwargs):
-            if path == self.root / "maps/b":
+        def fail(project, path, *args, **kwargs):
+            if path == "maps/b":
                 raise OSError("interrupted")
-            return real(path, *args, **kwargs)
+            return real(project, path, *args, **kwargs)
 
         with (
-            patch.object(workspace, "atomic_write", side_effect=fail),
+            patch.object(workspace, "restore_saved_file", side_effect=fail),
             self.assertRaises(OSError),
         ):
             workspace.restore_checkpoint(

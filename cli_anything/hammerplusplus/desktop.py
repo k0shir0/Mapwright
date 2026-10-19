@@ -4,19 +4,33 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-import warnings
 
 from .backend import BackendError, require_tool
 
+_owned_pid = None  # Set only by the broker after assigning its editor to the job.
 
-def application(project, config, pid):
+
+def inspect_editor(project, config, pid: int, limit: int = 200):
+    from .native_session import request
+
+    return request(project, config, pid, "inspect", {"limit": limit})
+
+
+def editor_action(project, config, pid: int, action: str, **arguments):
+    from .native_session import action as dispatch
+
+    return dispatch(project, config, pid, {"action": action, **arguments})
+
+
+def _assert_owned(project, config, pid):
+    if pid != _owned_pid:
+        raise BackendError("Native GUI access requires an owned hidden editor broker")
     if os.name != "nt":
         raise BackendError("Native Hammer++ interaction requires Windows")
     from .windows import set_dpi_awareness
 
     set_dpi_awareness()
     try:
-        from pywinauto import Application
         import win32api, win32con, win32process
     except ImportError as exc:
         raise BackendError(
@@ -32,11 +46,60 @@ def application(project, config, pid):
         win32api.CloseHandle(process)
     if actual != exe:
         raise BackendError("PID does not belong to the configured Hammer++ executable")
-    with warnings.catch_warnings():
-        warnings.filterwarnings(
-            "ignore", message="32-bit application should be automated"
+
+
+def owned_windows(pid):
+    import ctypes
+    from ctypes import wintypes
+    import win32api, win32gui, win32process, win32service
+
+    handles = []
+    user = ctypes.WinDLL("user32", use_last_error=True)
+    callback_type = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+    user.EnumDesktopWindows.argtypes = [wintypes.HANDLE, callback_type, wintypes.LPARAM]
+    user.EnumDesktopWindows.restype = wintypes.BOOL
+
+    @callback_type
+    def visit(hwnd, _):
+        if win32process.GetWindowThreadProcessId(hwnd)[1] == pid:
+            handles.append(hwnd)
+        return True
+
+    desktop = win32service.GetThreadDesktop(win32api.GetCurrentThreadId())
+    ctypes.set_last_error(0)
+    if not user.EnumDesktopWindows(int(desktop), visit, 0) and ctypes.get_last_error():
+        raise BackendError("Could not enumerate the owned editor desktop")
+    return handles
+
+
+def send_control(handle, message, wparam=0, lparam=0, timeout=2000):
+    """Bounded standard-control message, without focus or input synthesis."""
+    import ctypes
+    from ctypes import wintypes
+
+    user = ctypes.WinDLL("user32", use_last_error=True)
+    user.SendMessageTimeoutW.argtypes = [
+        wintypes.HWND,
+        wintypes.UINT,
+        wintypes.WPARAM,
+        wintypes.LPARAM,
+        wintypes.UINT,
+        wintypes.UINT,
+        ctypes.POINTER(ctypes.c_size_t),
+    ]
+    user.SendMessageTimeoutW.restype = wintypes.LPARAM
+    buffer = ctypes.create_unicode_buffer(lparam) if isinstance(lparam, str) else None
+    if buffer is not None:
+        lparam = ctypes.cast(buffer, ctypes.c_void_p).value
+    result = ctypes.c_size_t()
+    if not user.SendMessageTimeoutW(
+        handle, message, wparam, lparam, 2, timeout, ctypes.byref(result)
+    ):
+        raise BackendError(
+            "Native control message timed out; dispatch outcome is unknown, inspect the owned dialog",
+            {"outcome": "unknown"},
         )
-        return Application(backend="win32").connect(process=pid, timeout=5)
+    return result.value
 
 
 def menu_items(handle, depth=0):
@@ -110,22 +173,15 @@ def control_text(handle, class_name):
     return buffer.value
 
 
-def inspect_editor(project, config, pid: int, limit: int = 200):
-    application(project, config, pid)
+def _inspect_editor(project, config, pid: int, limit: int = 200):
+    _assert_owned(project, config, pid)
     import win32gui, win32process
 
-    handles = []
+    handles = owned_windows(pid)
     windows = []
-    win32gui.EnumWindows(
-        lambda h, _: (
-            handles.append(h)
-            if win32process.GetWindowThreadProcessId(h)[1] == pid
-            and win32gui.IsWindowVisible(h)
-            else None
-        ),
-        None,
-    )
     for handle in handles:
+        if not win32gui.IsWindowVisible(handle):
+            continue
         children = []
         win32gui.EnumChildWindows(handle, lambda h, _: children.append(h), None)
         controls = [
@@ -145,6 +201,8 @@ def inspect_editor(project, config, pid: int, limit: int = 200):
             {
                 "hwnd": handle,
                 "title": win32gui.GetWindowText(handle),
+                "class": win32gui.GetClassName(handle),
+                "enabled": bool(win32gui.IsWindowEnabled(handle)),
                 "controls": controls,
                 "menus": menu_items(menu) if menu else [],
             }
@@ -157,7 +215,7 @@ def inspect_editor(project, config, pid: int, limit: int = 200):
     }
 
 
-def editor_action(
+def _editor_action(
     project,
     config,
     pid: int,
@@ -173,7 +231,7 @@ def editor_action(
     button: str = "left",
     steps: int = 1,
 ):
-    app = application(project, config, pid)
+    _assert_owned(project, config, pid)
     import win32gui, win32process
 
     if hwnd is not None:
@@ -184,33 +242,36 @@ def editor_action(
             raise BackendError(
                 "Window/control handle does not belong to the configured editor PID"
             )
-        target = app.window(handle=hwnd).wrapper_object()
+        target = hwnd
     else:
-        candidates = [w for w in app.windows() if w.is_visible()]
+        candidates = [
+            h
+            for h in owned_windows(pid)
+            if win32gui.IsWindowVisible(h) and win32gui.GetMenu(h)
+        ]
         if not candidates:
             raise BackendError("Editor has no visible window")
         target = max(
-            candidates, key=lambda w: w.rectangle().width() * w.rectangle().height()
+            candidates,
+            key=lambda h: (lambda r: (r[2] - r[0]) * (r[3] - r[1]))(
+                win32gui.GetWindowRect(h)
+            ),
         )
     try:
-        if not target.is_enabled() and action not in ("restore", "maximize", "focus"):
+        if not win32gui.IsWindowEnabled(target) and action not in (
+            "restore",
+            "maximize",
+        ):
             raise BackendError(
                 "Editor target is disabled, usually by a modal dialog; inspect and act on that dialog first"
             )
-        if action in ("keys", "click", "double_click", "drag", "scroll") or (
-            action == "invoke" and target.class_name() != "Button"
-        ):
-            target.set_focus()
-            foreground = win32gui.GetForegroundWindow()
-            if (
-                not foreground
-                or win32process.GetWindowThreadProcessId(foreground)[1] != pid
-            ):
-                raise BackendError(
-                    "Windows refused editor focus; input was not sent to another application"
-                )
+        if action in ("keys", "click", "double_click", "drag", "scroll", "focus"):
+            raise BackendError(
+                "Hidden sessions use semantic menu/control messages. Inspect menu labels and control handles, or edit the VMF through terminal tools; global keyboard/mouse input is unavailable."
+            )
         if action == "menu":
-            items = menu_items(win32gui.GetMenu(target.handle))
+            items = menu_items(win32gui.GetMenu(target))
+            item = None
             clean = (
                 lambda label: label.split("\t")[0].replace("&", "").strip().casefold()
             )
@@ -224,56 +285,47 @@ def editor_action(
                     )
                 item = matches[0]
                 items = item["items"]
-            if items or not item["enabled"] or not 0 < item["id"] < 65536:
-                raise BackendError("Select an enabled menu command")
-            win32gui.PostMessage(target.handle, 0x111, item["id"], 0)
-        elif action == "keys":
-            target.type_keys(keys, set_foreground=True)
-        elif action == "text":
-            target.set_edit_text(text)
-        elif action == "select":
-            target.select(text)
-        elif action == "invoke":
-            if target.class_name() == "Button":
-                win32gui.PostMessage(
-                    target.handle, 0xF5, 0, 0
-                )  # BM_CLICK, independent of desktop DPI/focus.
-            else:
-                target.click_input()
-        elif action in ("click", "double_click", "drag", "scroll"):
-            rect = target.client_rect()
-            points = [(x, y)] + ([(end_x, end_y)] if action == "drag" else [])
-            if any(
-                not 0 <= a < rect.width() or not 0 <= b < rect.height()
-                for a, b in points
+            if (
+                item is None
+                or items
+                or not item["enabled"]
+                or not 0 < item["id"] < 65536
             ):
+                raise BackendError("Select an enabled menu command")
+            send_control(target, 0x111, item["id"], 0)
+        elif action == "text":
+            if win32gui.GetClassName(target) != "Edit":
+                raise BackendError("text requires a standard Edit control")
+            send_control(target, 0xC, 0, text)
+        elif action == "select":
+            class_name = win32gui.GetClassName(target)
+            if class_name not in ("ComboBox", "ListBox"):
+                raise BackendError("select requires a standard ComboBox or ListBox")
+            index = send_control(
+                target, 0x158 if class_name == "ComboBox" else 0x1A2, -1, text
+            )
+            if index == (1 << (8 * __import__("struct").calcsize("P"))) - 1:
                 raise BackendError(
-                    "Mouse coordinates must stay inside the selected editor control"
+                    "Selection must exactly match an existing control item"
                 )
-            for point in points:
-                hit = win32gui.WindowFromPoint(
-                    win32gui.ClientToScreen(target.handle, point)
-                )
-                if not hit or win32process.GetWindowThreadProcessId(hit)[1] != pid:
-                    raise BackendError(
-                        "Editor mouse target is occluded; input was not sent"
-                    )
-            if action == "scroll":
-                target.wheel_mouse_input(coords=(x, y), wheel_dist=steps)
-            elif action == "drag":
-                target.drag_mouse_input(button=button, src=(x, y), dst=(end_x, end_y))
+            send_control(target, 0x14E if class_name == "ComboBox" else 0x186, index, 0)
+            send_control(
+                win32gui.GetParent(target),
+                0x111,
+                win32gui.GetDlgCtrlID(target) | (1 << 16),
+                target,
+            )
+        elif action == "invoke":
+            if win32gui.GetClassName(target) == "Button":
+                send_control(target, 0xF5, 0, 0)
             else:
-                target.click_input(
-                    button=button, coords=(x, y), double=action == "double_click"
-                )
-        elif action == "focus":
-            target.set_focus()
+                raise BackendError("invoke requires a standard Button control")
         elif action == "restore":
-            target.restore()
+            win32gui.ShowWindow(target, 4)  # SW_SHOWNOACTIVATE, private desktop only.
         elif action == "maximize":
-            target.maximize()
+            win32gui.ShowWindow(target, 3)
         elif action == "close":
-            target.close()
+            win32gui.PostMessage(target, 0x10, 0, 0)
         else:
             raise BackendError("Unknown editor action")
     except Exception as exc:
@@ -282,8 +334,8 @@ def editor_action(
         raise BackendError(f"Editor action failed: {exc}") from exc
     return {
         "pid": pid,
-        "hwnd": target.handle,
+        "hwnd": target,
         "action": action,
         "status": "dispatched",
-        "verification": "Inspect editor state and a viewport capture to verify the requested outcome. Native GUI saves are not protected by the VMF transaction lock.",
+        "verification": "Dispatched on the owned private desktop. Inspect resulting controls and a viewport capture; save_editor commits staged VMF bytes through the revision-checked transaction.",
     }

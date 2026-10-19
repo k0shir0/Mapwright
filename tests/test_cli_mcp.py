@@ -1,3 +1,4 @@
+import argparse
 import json
 import os
 from pathlib import Path
@@ -42,6 +43,22 @@ class CLITests(unittest.TestCase):
         )
         self.assertNotIn("Traceback", result.stderr)
         return json.loads(result.stdout)
+
+    def test_every_command_and_flag_has_help_and_tool_coverage(self):
+        from cli_anything.hammerplusplus.cli import COMMANDS, parser
+
+        root = parser()
+        commands = next(
+            a for a in root._actions if isinstance(a, argparse._SubParsersAction)
+        ).choices
+        self.assertEqual(set(TOOLS), set(COMMANDS.values()) | {"doctor"})
+        for name, command in [("root", root), *commands.items()]:
+            with self.subTest(command=name):
+                self.assertTrue(command.description)
+                self.assertIn("usage:", command.format_help())
+                for argument in command._actions:
+                    if not isinstance(argument, argparse._SubParsersAction):
+                        self.assertTrue(argument.help, (name, argument.dest))
 
     def test_complete_editing_workflow_and_stale_revision(self):
         created = self.run_cli("new", "room.vmf", "--template", "csgo-room")["data"]

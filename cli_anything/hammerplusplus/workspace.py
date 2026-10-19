@@ -112,6 +112,10 @@ def summary(args):
 
 
 def operations(project, offset=0, limit=100):
+    if project.confined(".hammer-agent/timeline/actions.sqlite3").exists():
+        from .timeline import Timeline
+
+        return Timeline(project).operations(offset, limit)
     rows = []
     with audit_lock(project):
         for suffix in (".3", ".2", ".1", ""):
@@ -144,6 +148,8 @@ ARTIFACTS = {
     "imports",
     "checkpoints",
     "recovery",
+    "timeline",
+    "native-sessions",
 }
 
 
@@ -280,11 +286,9 @@ def collect(project, paths):
         total += size
         if size > 128 * 1024 * 1024 or total > 512 * 1024 * 1024:
             raise MapError("Checkpoint limit: 128 MiB per file, 512 MiB total")
-        raw = p.read_bytes()
-        revision = digest(raw)
-        blob = project.confined(f".hammer-agent/checkpoints/blobs/{revision}")
-        if not blob.exists():
-            atomic_write(blob, raw, exclusive=True)
+        from .timeline import store_file
+
+        revision = store_file(project, p)
         rows[name] = revision
     return rows
 
@@ -366,6 +370,8 @@ def checkpoint_status(project, token):
 
 
 def restore_checkpoint(project, token, expected_revisions, dry_run=False):
+    from .timeline import file_hash
+
     with project.locked():
         receipt = load_checkpoint(project, token)
         status = checkpoint_status(project, token)
@@ -377,17 +383,15 @@ def restore_checkpoint(project, token, expected_revisions, dry_run=False):
         changes = status["changes"]
         if dry_run:
             return {"token": token, "dry_run": True, "changes": changes}
-        # All bytes and paths are verified before the first write; the reverse checkpoint
-        # and pending receipt make interruption recoverable, not a filesystem transaction.
-        payload = {}
+        # Verify before writing; reverse snapshots and a pending receipt make
+        # interruption recoverable without retaining all file payloads in RAM.
         for change in changes:
             if change["after"] is not None:
-                raw = project.confined(
+                blob = project.confined(
                     f'.hammer-agent/checkpoints/blobs/{change["after"]}'
-                ).read_bytes()
-                if digest(raw) != change["after"]:
+                )
+                if file_hash(blob) != change["after"]:
                     raise MapError("Checkpoint blob checksum mismatch")
-                payload[change["path"]] = raw
         before = collect(project, receipt["paths"])
         reverse = uuid.uuid4().hex
         atomic_write(
@@ -416,7 +420,7 @@ def restore_checkpoint(project, token, expected_revisions, dry_run=False):
         atomic_write(
             pending_path, json.dumps(pending, indent=2).encode(), exclusive=True
         )
-        apply_recovery(project, pending, payload)
+        apply_recovery(project, pending)
         pending["status"] = "complete"
         atomic_write(pending_path, json.dumps(pending, indent=2).encode())
     return {
@@ -429,8 +433,15 @@ def restore_checkpoint(project, token, expected_revisions, dry_run=False):
     }
 
 
-def apply_recovery(project, receipt, payload=None):
-    payload = payload or {}
+def restore_saved_file(project, name, revision, expected):
+    from .timeline import restore_file
+
+    restore_file(project, name, revision, expected)
+
+
+def apply_recovery(project, receipt):
+    from .timeline import file_hash
+
     # Validate the entire interrupted batch before resuming any part of it.
     for change in receipt["changes"]:
         p = recovery_path(project, change["path"])
@@ -445,31 +456,27 @@ def apply_recovery(project, receipt, payload=None):
                 break
             if parent.exists() and not parent.is_dir():
                 raise MapError("A checkpoint parent directory was replaced by a file")
-        current = digest(p.read_bytes()) if p.is_file() else None
+        current = file_hash(p)
         if current not in (change["before"], change["after"]):
             raise MapError(
                 "External changes detected during checkpoint recovery; inspect artifacts before proceeding"
             )
-        if change["after"] is not None and change["path"] not in payload:
-            raw = project.confined(
+        if change["after"] is not None:
+            blob = project.confined(
                 f'.hammer-agent/checkpoints/blobs/{change["after"]}'
-            ).read_bytes()
-            if digest(raw) != change["after"]:
+            )
+            if file_hash(blob) != change["after"]:
                 raise MapError("Checkpoint blob checksum mismatch")
-            payload[change["path"]] = raw
     for change in receipt["changes"]:
         p = recovery_path(project, change["path"])
-        current = digest(p.read_bytes()) if p.is_file() else None
+        current = file_hash(p)
         if current == change["after"]:
             continue
         if current != change["before"]:
             raise MapError(
                 "File changed during checkpoint restore; recovery receipt retained"
             )
-        if change["after"] is None:
-            p.unlink()
-        else:
-            atomic_write(p, payload[change["path"]], exclusive=current is None)
+        restore_saved_file(project, change["path"], change["after"], current)
 
 
 def resume_recovery(project, token):

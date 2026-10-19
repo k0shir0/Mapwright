@@ -8,7 +8,22 @@ maps, operate the editor, and recover changes. CS2/Source 2 is unsupported.
 
 ## Install
 
-Python 3.11+. In PowerShell:
+Point your agent at this checkout and ask it to set up local Mapwright MCP.
+The [setup skill](skills/mapwright-setup/SKILL.md) installs the Python environment,
+registers the requested client, bundles mapping guides, and verifies the server.
+Python 3.11+ is required. For example, in PowerShell:
+
+```powershell
+python scripts/setup_agent.py --client codex --yes
+```
+
+Clients: Codex, Claude Code, OpenCode, Google Antigravity, pi and Hermes.
+Project scope is the default; Hermes uses `--scope user` for its active profile.
+Run without `--yes` to preview resolved paths. `--help` covers client detection,
+workspace selection and rollback. No hand-written client config or shell
+activation is needed. See [agent connections](docs/agent-connections.md).
+
+For a package-only development install:
 
 ```powershell
 python -m venv .venv
@@ -48,9 +63,10 @@ mapwright kz-test-plan maps/kz_example.vmf
 | Task | Read |
 | --- | --- |
 | Agent mapping workflow | [Mapping skill](skills/mapwright/SKILL.md) |
+| Install/register MCP and skills | [Setup skill](skills/mapwright-setup/SKILL.md) |
 | GOKZ entities, geometry, and checks | [KZ contract](docs/kz-mapping.md) |
 | Hammer++, compilers, FGD, assets | [Setup](docs/setup.md) |
-| Codex, Claude Code, OpenCode | [MCP connections](docs/agent-connections.md) |
+| Codex, Claude, OpenCode, Antigravity, pi, Hermes | [MCP connections](docs/agent-connections.md) |
 | Copy another map's section | [Reference maps](docs/reference-maps.md) |
 | Undo, checkpoints, logs, crash recovery | [Recovery](docs/recovery.md) |
 | Modify this repository | [AGENTS.md](AGENTS.md) |
@@ -65,8 +81,22 @@ python -m unittest discover -s tests -v
 python scripts/demo.py
 # Configured native compilers required:
 python scripts/verify_kz.py
+# Configured native Hammer++ / REA required for the real native MCP lane:
+$env:MAPWRIGHT_NATIVE_E2E_CONFIG = (Resolve-Path mapwright.local.json).Path
+python -m unittest discover -s tests -p test_mcp_e2e.py -v
+python scripts/verify_native_session.py --run
 ```
 
 CI checks and formatter version: [.github/workflows/checks.yml](.github/workflows/checks.yml).
 Structural checks and compilation do not prove rendering or playability.
 Inspect editor captures and test the compiled map on the intended KZ server.
+The portable MCP suite exercises every advertised tool, with explicit native
+contract fixtures and missing-prerequisite errors. The opt-in native lane uses
+the actual configured compiler, REA and private-desktop Hammer++ process,
+including guarded save and saved-file checkout with automatic editor reopen.
+
+Native editor operations use an owned private Windows desktop and a staged
+VMF. `editor-save` commits verified bytes to the source with a revision check;
+`editor-close` cleans up the owned session. The permanent action timeline
+supports saved-file recovery. See [setup](docs/setup.md#terminal-controlled-editor-sessions)
+and [recovery](docs/recovery.md) for the boundaries.
