@@ -8,6 +8,8 @@ import json
 import os
 from pathlib import Path
 import tempfile
+from datetime import datetime, timezone
+import uuid
 from typing import Any
 
 from . import vmf
@@ -46,6 +48,7 @@ class Project:
         self.root = Path(root).resolve(strict=True)
         if not self.root.is_dir():
             raise vmf.MapError("Workspace must be an existing directory")
+        self.session_id = uuid.uuid4().hex
 
     def confined(self, name: str | Path) -> Path:
         path = (self.root / name).resolve()
@@ -77,7 +80,15 @@ class Project:
             ) from exc
         try:
             with os.fdopen(fd, "w") as stream:
-                stream.write(str(os.getpid()))
+                stream.write(
+                    json.dumps(
+                        {
+                            "pid": os.getpid(),
+                            "session_id": self.session_id,
+                            "timestamp": datetime.now(timezone.utc).isoformat(),
+                        }
+                    )
+                )
             yield
         finally:
             lock.unlink()
@@ -171,6 +182,8 @@ class Project:
                 "path": str(path.relative_to(self.root)),
                 "revision": expected_revision,
                 "token": token,
+                "status": "prepared",
+                "timestamp": datetime.now(timezone.utc).isoformat(),
             }
             atomic_write(
                 self.confined(f".hammer-agent/trash/{token}.json"),
@@ -179,6 +192,11 @@ class Project:
             if path.read_bytes() != data:
                 raise vmf.MapError("Map changed before deletion")
             path.unlink()
+            receipt["status"] = "deleted"
+            atomic_write(
+                self.confined(f".hammer-agent/trash/{token}.json"),
+                json.dumps(receipt).encode(),
+            )
         return {
             **receipt,
             "deleted": True,
@@ -194,17 +212,22 @@ class Project:
             )
             path = self.map_path(receipt["path"])
             atomic_write(path, self.snapshot(receipt["revision"]), exclusive=True)
+            receipt["status"] = "restored"
+            atomic_write(
+                self.confined(f".hammer-agent/trash/{token}.json"),
+                json.dumps(receipt).encode(),
+            )
         return self.inspect(receipt["path"])
 
     def create(self, name: str, template: str = "empty") -> dict:
-        if template not in ("empty", "csgo-room"):
-            raise vmf.MapError("template must be empty or csgo-room")
+        if template not in ("empty", "csgo-room", "kz-room"):
+            raise vmf.MapError("template must be empty, csgo-room or kz-room")
         with self.locked():
             path = self.map_path(name)
             if path.exists():
                 raise vmf.MapError("Map already exists; create never overwrites")
             text = vmf.new_map()
-            if template == "csgo-room":
+            if template in ("csgo-room", "kz-room"):
                 operations = [
                     dict(op="add_room", min=[-512, -512, 0], max=[512, 512, 256]),
                     dict(
@@ -233,6 +256,53 @@ class Project:
                 ]
                 for op in operations:
                     text, _ = vmf.mutate(text, op)
+            if template == "kz-room":
+                text, _ = vmf.mutate(
+                    text,
+                    dict(
+                        op="set_properties",
+                        id=1,
+                        kind="world",
+                        properties={"climb_mapping_api_version": "1"},
+                    ),
+                )
+                text, _ = vmf.mutate(
+                    text,
+                    dict(
+                        op="add_entity",
+                        classname="info_teleport_destination",
+                        origin=[-384, 0, 16],
+                        properties={"targetname": "climb_start", "angles": "0 0 0"},
+                    ),
+                )
+                for zone_name, lo, hi in (
+                    ("climb_startzone", [-448, -128, 0], [-320, 128, 32]),
+                    ("climb_endzone", [320, -128, 0], [448, 128, 32]),
+                ):
+                    text, result = vmf.mutate(
+                        text,
+                        dict(
+                            op="add_entity",
+                            classname="trigger_multiple",
+                            origin=[0, 0, 0],
+                            properties={
+                                "targetname": zone_name,
+                                "spawnflags": "1",
+                                "wait": "0",
+                            },
+                        ),
+                    )
+                    text, _ = vmf.mutate(
+                        text,
+                        dict(
+                            op="add_box",
+                            min=lo,
+                            max=hi,
+                            material="tools/toolstrigger",
+                            parent_id=result["ids"][0],
+                            parent_kind="entity",
+                        ),
+                    )
             data = text.replace("\n", "\r\n").encode("utf-8")
             # Publish the completed file exclusively, never an incomplete new map.
             atomic_write(path, data, exclusive=True)
@@ -256,7 +326,7 @@ class Project:
             raise vmf.MapError("Snapshot checksum mismatch")
         return result
 
-    def load_history(self, path: Path) -> dict:
+    def load_history(self, path: Path, *, recover: bool = True) -> dict:
         journal = self.journal_path(path)
         if not journal.exists():
             return {"entries": [], "position": 0}
@@ -272,7 +342,8 @@ class Project:
                 raise vmf.MapError(
                     "Interrupted transaction and external edit detected; snapshots retained for manual recovery"
                 )
-            atomic_write(journal, json.dumps(state).encode())
+            if recover:
+                atomic_write(journal, json.dumps(state).encode())
         return state
 
     def publish(self, path: Path, before: bytes, after: bytes, old: dict, state: dict):
@@ -329,11 +400,28 @@ class Project:
             revision = digest(after)
             if not dry_run and after != before:
                 old = self.load_history(path)
+                if old["position"] < len(old["entries"]):
+                    branch = self.confined(
+                        f".hammer-agent/history/abandoned-{uuid.uuid4().hex}.json"
+                    )
+                    atomic_write(
+                        branch,
+                        json.dumps(
+                            {
+                                "path": str(path.relative_to(self.root)),
+                                "timestamp": datetime.now(timezone.utc).isoformat(),
+                                **old,
+                            }
+                        ).encode(),
+                        exclusive=True,
+                    )
                 entries = old["entries"][: old["position"]]
                 entries.append(
                     {
                         "before": expected_revision,
                         "after": revision,
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                        "session_id": self.session_id,
                         "operations": [
                             (
                                 {
@@ -352,7 +440,11 @@ class Project:
                     before,
                     after,
                     old,
-                    {"entries": entries, "position": len(entries)},
+                    {
+                        "path": str(path.relative_to(self.root)),
+                        "entries": entries,
+                        "position": len(entries),
+                    },
                 )
         return {
             "path": str(path),
@@ -364,10 +456,9 @@ class Project:
         }
 
     def history(self, name: str) -> dict:
-        with self.locked():
-            path, data, _, _ = self.read(name)
-            state = self.load_history(path)
-            return {"revision": digest(data), **state}
+        path, data, _, _ = self.read(name)
+        state = self.load_history(path, recover=False)
+        return {"revision": digest(data), **state}
 
     def restore(self, name: str, expected_revision: str, direction: str) -> dict:
         if direction not in ("undo", "redo"):

@@ -8,6 +8,7 @@ from ctypes import wintypes
 import os
 from pathlib import Path
 import struct
+import time
 import zlib
 
 from .backend import BackendError, require_tool
@@ -101,10 +102,35 @@ def capture_editor(
         window = app.window(handle=hwnd)
         window.set_focus()
         from PIL import ImageGrab
-        import win32gui
+        import win32gui, win32process
 
-        region = win32gui.GetWindowRect(hwnd)
-        captured = ImageGrab.grab(bbox=region, all_screens=True)
+        was_topmost = bool(win32gui.GetWindowLong(hwnd, -20) & 8)
+        try:
+            # Foreground requests can be refused. Keep only this owned window
+            # above other apps while capturing, then restore its stacking state.
+            win32gui.SetWindowPos(hwnd, -1, 0, 0, 0, 0, 0x13)
+            win32gui.RedrawWindow(hwnd, None, None, 0x181)
+            time.sleep(0.25)
+            ctypes.WinDLL("dwmapi").DwmFlush()
+            region = win32gui.GetWindowRect(hwnd)
+            for fx in (0.25, 0.5, 0.75):
+                for fy in (0.25, 0.5, 0.75):
+                    point = (
+                        int(region[0] + (region[2] - region[0]) * fx),
+                        int(region[1] + (region[3] - region[1]) * fy),
+                    )
+                    owner = win32gui.WindowFromPoint(point)
+                    if (
+                        not owner
+                        or win32process.GetWindowThreadProcessId(owner)[1] != pid
+                    ):
+                        raise BackendError(
+                            "Editor capture is occluded by another app; make the editor fully visible and retry"
+                        )
+            captured = ImageGrab.grab(bbox=region, all_screens=True)
+        finally:
+            if not was_topmost:
+                win32gui.SetWindowPos(hwnd, -2, 0, 0, 0, 0, 0x13)
         buffer = io.BytesIO()
         captured.save(buffer, format="PNG")
         atomic_write(path, buffer.getvalue(), exclusive=True)

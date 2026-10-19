@@ -1,0 +1,12 @@
+{
+  "game_dir": ".local/csgo-editor/csgo",
+  "hammer": ".local/csgo-editor/bin/hammerplusplus.exe",
+  "vbsp": ".local/toolsplusplus/tools++_windows/vbsp++.exe",
+  "vvis": ".local/toolsplusplus/tools++_windows/vvis++.exe",
+  "vrad": ".local/toolsplusplus/tools++_windows/vrad++.exe",
+  "fgd": [
+    ".local/csgo-editor/bin/hammerplusplus/csgo_agent.fgd",
+    ".local/csgo-editor/bin/hammerplusplus/kz_mapping_api.fgd"
+  ],
+  "bspsrc_java": ".local/bspsrc-1.4.8/bin/java.exe"
+}

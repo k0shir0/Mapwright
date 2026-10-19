@@ -13,7 +13,7 @@ from cli_anything.hammerplusplus.project import Project
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--workspace", default=".")
-    parser.add_argument("--config", default="hammer-agent.local.json")
+    parser.add_argument("--config", default="mapwright.local.json")
     args = parser.parse_args()
     project = Project(args.workspace)
     name = f".local/backend-verification/{uuid.uuid4().hex}/agent_room.vmf"

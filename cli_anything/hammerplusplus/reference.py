@@ -150,13 +150,20 @@ def import_map(
         "source_revision": digest(raw),
         "revision": digest(data),
         "format": original.suffix[1:].lower(),
+        "output": str(target.relative_to(project.root)),
+        "status": "prepared",
         "decompiler_command": command,
         "assets_dir": str(assets) if assets.exists() else None,
         "warnings": warnings,
         "log": str(job / "decompile.log") if command else None,
     }
     with project.locked():
+        # Record provenance before publishing the imported map.
+        atomic_write(
+            receipt_path(project, target), json.dumps(provenance, indent=2).encode()
+        )
         atomic_write(target, data, exclusive=True)
+        provenance["status"] = "complete"
         atomic_write(
             receipt_path(project, target), json.dumps(provenance, indent=2).encode()
         )
@@ -293,7 +300,7 @@ def translated(source: str, delta: list[float]) -> str:
             if is_origin or is_plane or is_disp:
                 values = vmf.vector(prop.value, 9 if is_plane else 3)
                 moved = [v + delta[i % 3] for i, v in enumerate(values)]
-                if any(abs(v) > 32768 for v in moved):
+                if any(abs(v) > 16384 for v in moved):
                     raise vmf.MapError(
                         "Copied geometry leaves Source coordinate bounds"
                     )
@@ -369,11 +376,7 @@ def copy_objects(
     }
     definitions = None
     if config and config.get("fgd"):
-        FGD, _ = catalog.source_tools()
-        from srctools.filesys import RawFileSystem
-
-        fgd = configured_path(project, config, "fgd")
-        definitions = FGD.parse(fgd.name, RawFileSystem(fgd.parent))
+        definitions = catalog.entity_definitions(project, config)
 
     def fields(node, types):
         if definitions is None:

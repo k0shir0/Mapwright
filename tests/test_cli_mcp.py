@@ -15,7 +15,7 @@ RUNS.mkdir(parents=True, exist_ok=True)
 
 
 def resolve_cli():
-    name = "cli-anything-hammerplusplus"
+    name = "mapwright"
     executable = shutil.which(name)
     if executable:
         return [executable]
@@ -124,9 +124,7 @@ class CLITests(unittest.TestCase):
             async with stdio_client(params) as (read, write):
                 async with ClientSession(read, write) as session:
                     initialized = await session.initialize()
-                    self.assertEqual(
-                        initialized.serverInfo.name, "hammerplusplus-agent"
-                    )
+                    self.assertEqual(initialized.serverInfo.name, "mapwright")
                     tools = await session.list_tools()
                     self.assertEqual({tool.name for tool in tools.tools}, set(TOOLS))
                     created = await session.call_tool(

@@ -140,7 +140,7 @@ def fmt(values) -> str:
 
 def position(value: Any) -> list[float]:
     result = vector(value)
-    if any(abs(v) > 32768 for v in result):
+    if any(abs(v) > 16384 for v in result):
         raise MapError("Position exceeds Source coordinate bounds")
     return result
 
@@ -262,11 +262,17 @@ def next_id(root: Node) -> int:
     return max(ids, default=0) + 1
 
 
-def make_box(low: Any, high: Any, material: str, start_id: int) -> tuple[str, int]:
+def make_box(
+    low: Any,
+    high: Any,
+    material: str,
+    start_id: int,
+    face_materials: dict | None = None,
+) -> tuple[str, int]:
     lo, hi = vector(low), vector(high)
-    if not all(-32768 <= a < b <= 32768 for a, b in zip(lo, hi)):
+    if not all(-16384 <= a < b <= 16384 for a, b in zip(lo, hi)):
         raise MapError(
-            "Box minimum must be below maximum, within +/-32768 Source units"
+            "Box minimum must be below maximum, within +/-16384 Source units"
         )
     x, y, z = lo
     X, Y, Z = hi
@@ -280,13 +286,23 @@ def make_box(low: Any, high: Any, material: str, start_id: int) -> tuple[str, in
         ([(X, y, z), (X, Y, z), (X, Y, Z)], "[0 1 0 0] 0.25", "[0 0 -1 0] 0.25"),
     ]
     children = ""
+    face_materials = face_materials or {}
+    names = ("top", "bottom", "south", "north", "west", "east")
+    if (
+        not isinstance(face_materials, dict)
+        or set(face_materials) - set(names)
+        or any(not isinstance(v, str) or not v for v in face_materials.values())
+    ):
+        raise MapError(
+            "face_materials accepts top, bottom, south, north, west, east material strings"
+        )
     for offset, (points, u, v) in enumerate(faces, 1):
         children += block(
             "side",
             {
                 "id": start_id + offset,
                 "plane": " ".join("(" + fmt(p) + ")" for p in reversed(points)),
-                "material": material,
+                "material": face_materials.get(names[offset - 1], material),
                 "uaxis": u,
                 "vaxis": v,
                 "rotation": "0",
@@ -312,7 +328,10 @@ def mutate(text: str, operation: dict) -> tuple[str, dict]:
     root = parse(text)
     op = operation.get("op")
     fields = {
-        "add_box": ({"min", "max"}, {"material", "parent_id", "parent_kind"}),
+        "add_box": (
+            {"min", "max"},
+            {"material", "parent_id", "parent_kind", "face_materials"},
+        ),
         "add_room": ({"min", "max"}, {"material", "thickness"}),
         "add_entity": ({"classname", "origin"}, {"properties"}),
         "set_properties": ({"id", "properties"}, {"kind"}),
@@ -355,6 +374,7 @@ def mutate(text: str, operation: dict) -> tuple[str, dict]:
             operation["max"],
             operation.get("material", "tools/toolsnodraw"),
             oid,
+            operation.get("face_materials"),
         )
         return insert(text, parent, addition), {"op": op, "ids": [oid]}
     if op == "add_room":
@@ -518,7 +538,7 @@ def mutate(text: str, operation: dict) -> tuple[str, dict]:
         if prop.key in ("origin", "plane"):
             values = vector(prop.value, 9 if prop.key == "plane" else 3)
             moved = [x + delta[i % 3] for i, x in enumerate(values)]
-            if any(abs(x) > 32768 for x in moved):
+            if any(abs(x) > 16384 for x in moved):
                 raise MapError("Translation leaves Source coordinate bounds")
             val = (
                 " ".join("(" + fmt(moved[i : i + 3]) + ")" for i in range(0, 9, 3))
@@ -622,7 +642,7 @@ def validate(text: str) -> dict:
                 for key in ("uaxis", "vaxis"):
                     if vector(n.get(key), 5)[4] == 0:
                         errors.append(f'Side {n.get("id")} has zero texture scale')
-                if any(abs(x) > 32768 for x in plane):
+                if any(abs(x) > 16384 for x in plane):
                     errors.append(
                         f'Side {n.get("id")} exceeds Source coordinate bounds'
                     )
