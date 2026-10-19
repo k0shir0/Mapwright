@@ -1,0 +1,15 @@
+.local/
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.hammer-agent/
+mapwright.local.json
+hammer-agent.local.json
+*.bsp
+*.prt
+*.lin
+*.log
+.pytest_cache/

@@ -1,0 +1,4 @@
+[
+  {"op":"add_box","min":[-64,-64,0],"max":[64,64,64],"material":"dev/dev_measuregeneric01b"},
+  {"op":"add_entity","classname":"logic_relay","origin":[0,0,96],"properties":{"targetname":"agent_relay"}}
+]
