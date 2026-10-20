@@ -2,7 +2,7 @@
 
 Run without --yes to inspect the resolved plan. No client configuration is
 written until the entire plan has been validated. Agent setup is independent
-of the optional REA/CLI-Anything development tools.
+of the optional REA development tools.
 """
 
 from __future__ import annotations
@@ -798,8 +798,8 @@ def bootstrap(checkout, apply=False, hermes=False):
                 str(python),
                 "-I",
                 "-c",
-                "import pathlib, sys, site; assert sys.version_info >= (3, 11); assert sys.prefix != sys.base_prefix; assert not site.ENABLE_USER_SITE; import mcp, srctools, jsonschema; import cli_anything.hammerplusplus as package; assert pathlib.Path(package.__file__).resolve().parent == pathlib.Path("
-                + repr(str(checkout / "cli_anything/hammerplusplus"))
+                "import pathlib, sys, site; assert sys.version_info >= (3, 11); assert sys.prefix != sys.base_prefix; assert not site.ENABLE_USER_SITE; import mcp, srctools, jsonschema; import cli.hammerplusplus as package; assert pathlib.Path(package.__file__).resolve().parent == pathlib.Path("
+                + repr(str(checkout / "cli/hammerplusplus"))
                 + "); "
                 + ("import win32api, win32job, PIL, frida; " if os.name == "nt" else "")
                 + ("import yaml" if hermes else ""),

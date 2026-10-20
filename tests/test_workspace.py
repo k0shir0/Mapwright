@@ -5,9 +5,9 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from cli_anything.hammerplusplus import workspace, vmf
-from cli_anything.hammerplusplus.api import execute
-from cli_anything.hammerplusplus.project import Project, digest
+from cli.hammerplusplus import workspace, vmf
+from cli.hammerplusplus.api import execute
+from cli.hammerplusplus.project import Project, digest
 
 RUNS = Path(__file__).resolve().parents[1] / ".local/test-runs"
 RUNS.mkdir(parents=True, exist_ok=True)

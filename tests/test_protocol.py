@@ -8,9 +8,9 @@ import sys
 import tempfile
 import unittest
 
-from cli_anything.hammerplusplus import catalog, backend
-from cli_anything.hammerplusplus.project import Project
-from cli_anything.hammerplusplus.api import execute
+from cli.hammerplusplus import catalog, backend
+from cli.hammerplusplus.project import Project
+from cli.hammerplusplus.api import execute
 
 RUNS = Path(__file__).resolve().parents[1] / ".local/test-runs"
 RUNS.mkdir(parents=True, exist_ok=True)
@@ -28,7 +28,7 @@ class ProtocolTests(unittest.TestCase):
             [
                 sys.executable,
                 "-m",
-                "cli_anything.hammerplusplus",
+                "cli.hammerplusplus",
                 "--workspace",
                 str(self.root),
                 "--json",
@@ -142,7 +142,7 @@ class ProtocolTests(unittest.TestCase):
                 command=sys.executable,
                 args=[
                     "-m",
-                    "cli_anything.hammerplusplus",
+                    "cli.hammerplusplus",
                     "--workspace",
                     str(self.root),
                     "mcp",

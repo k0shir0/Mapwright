@@ -5,8 +5,8 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from cli_anything.hammerplusplus import backend
-from cli_anything.hammerplusplus.project import Project
+from cli.hammerplusplus import backend
+from cli.hammerplusplus.project import Project
 
 RUNS = Path(__file__).resolve().parents[1] / ".local/test-runs"
 RUNS.mkdir(parents=True, exist_ok=True)
@@ -47,7 +47,7 @@ class BackendTests(unittest.TestCase):
         self.assertEqual(backend.load_config(self.project), {"game_dir": "mapwright"})
 
     def test_doctor_diagnoses_missing_and_unsupported_renderer_profiles(self):
-        from cli_anything.hammerplusplus import render_capture
+        from cli.hammerplusplus import render_capture
 
         missing = backend.doctor(self.project, self.config)
         self.assertFalse(missing["viewport_profile_ready"])

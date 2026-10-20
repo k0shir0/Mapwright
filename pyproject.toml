@@ -23,8 +23,8 @@ desktop = ["pywin32>=306; sys_platform == 'win32'", "Pillow>=10; sys_platform ==
 dev = ["black==26.3.1", "PyYAML==6.0.3"]
 
 [project.scripts]
-mapwright = "cli_anything.hammerplusplus.cli:entrypoint"
+mapwright = "cli.hammerplusplus.cli:entrypoint"
 
 [tool.setuptools.packages.find]
-include = ["cli_anything*"]
+include = ["cli", "cli.*"]
 namespaces = true

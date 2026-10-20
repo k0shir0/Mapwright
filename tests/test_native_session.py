@@ -7,8 +7,8 @@ import tempfile
 import unittest
 from unittest.mock import MagicMock, patch
 
-from cli_anything.hammerplusplus import backend, desktop, native_session, windows
-from cli_anything.hammerplusplus.project import Project, digest
+from cli.hammerplusplus import backend, desktop, native_session, windows
+from cli.hammerplusplus.project import Project, digest
 
 RUNS = Path(__file__).resolve().parents[1] / ".local/test-runs"
 RUNS.mkdir(parents=True, exist_ok=True)
@@ -36,9 +36,13 @@ class NativeSessionTests(unittest.TestCase):
             "enabled": True,
         }
         self.assertFalse(native_session.readiness([main], "map.vmf")["ready"])
-        main["title"] = r"Hammer++ - [C:\owned\another-map.vmf - Textured Shaded]"
+        main["title"] = (
+            f"Hammer++ - [{Path(self.temp.name) / 'another-map.vmf'} - Textured Shaded]"
+        )
         self.assertFalse(native_session.readiness([main], "map.vmf")["ready"])
-        main["title"] = r"Hammer++ - [C:\owned\map.vmf - Textured Shaded]"
+        main["title"] = (
+            f"Hammer++ - [{Path(self.temp.name) / 'map.vmf'} - Textured Shaded]"
+        )
         self.assertTrue(native_session.readiness([main], "map.vmf")["ready"])
         main["enabled"] = False
         self.assertEqual(
