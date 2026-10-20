@@ -377,6 +377,7 @@ def read_json(value: str):
 def main(argv=None):
     compact = False
     check_failed = False
+    command = None
     try:
         args = vars(parser().parse_args(argv))
         compact = args.pop("json")
@@ -449,10 +450,17 @@ def main(argv=None):
         result = {"ok": False, "error": str(exc)}
         if isinstance(exc, BackendError):
             result["details"] = exc.details
+        if command == "mcp" and isinstance(exc, PermissionError):
+            result["hint"] = (
+                "Check the server process's filesystem permissions. A child launched "
+                "from a restricted shell inherits its access limits; use the registered "
+                "MCP server in the intended client context. See docs/agent-connections.md."
+            )
     print(
         json.dumps(
             result, indent=None if compact else 2, ensure_ascii=False, allow_nan=False
-        )
+        ),
+        file=sys.stderr if command == "mcp" else sys.stdout,
     )
     return 0 if result["ok"] and not check_failed else 1
 

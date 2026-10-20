@@ -128,3 +128,28 @@ Any terminal-capable agent can use the installed CLI from the skill's
 `installation.json`, even if an old client lacks MCP or cannot reload it.
 Run `schema` for tool fields and `COMMAND --help` for flags. Read
 [recovery](recovery.md) for operation logs, checkpoints and artifacts.
+
+## Missing tools or startup failures
+
+An installed `.venv` does not register an MCP server. If Mapwright is absent
+from the client's tool catalog, run the setup workflow above for that client
+and scope, then inspect its receipt and verification result. For Codex,
+project registration is `.codex/config.toml`, with skills in `.agents/skills/`;
+the absence of a user-scoped skill receipt does not rule out project setup.
+Codex loads project configuration only in trusted projects, as described in
+its [configuration documentation](https://developers.openai.com/codex/config-file/config-basic).
+Report current-chat discovery separately from a successful stdio smoke test.
+
+For a server that exits before initialize, capture stderr and the exit code.
+MCP startup errors go to stderr and exit with code 1; stdout is reserved for
+protocol messages, following the [stdio transport contract](https://modelcontextprotocol.io/specification/2025-03-26/basic/transports#stdio).
+Non-MCP CLI commands continue to return their JSON envelope on stdout.
+
+On Windows, `WinError 5` during workspace resolution can occur in a restricted
+child process even when reading repository files succeeds. Compare the exact
+registered executable and workspace in the intended client context, using
+the environment's approved permission mechanism when required. If that
+initializes successfully while the restricted launch fails, repair client
+registration or process access rather than changing map code. The CLI fallback
+also needs filesystem access; it cannot bypass a denied workspace. Preserve
+canonical workspace resolution and junction/symlink confinement checks.
