@@ -312,41 +312,27 @@ def compile_map(
     return receipt
 
 
-def open_editor(project: Project, config: dict, name: str) -> dict:
-    path = project.map_path(name)
-    project.read(name)
-    exe = require_tool(project, config, "hammer")
-    game = require_game(project, config)
+def open_editor(project: Project, config: dict, name: str, timeout: int = 30) -> dict:
+    from . import native_session
+
     report = doctor(project, config)
     if not report["editor_ready"]:
         raise BackendError("Hammer++ SDK dependencies are missing", report)
-    args = [str(exe), "-game", str(game), str(path)]
-    startup = {}
-    if os.name == "nt":
-        info = subprocess.STARTUPINFO()
-        info.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-        info.wShowWindow = 1  # SW_SHOWNORMAL: hidden agent shells otherwise create broken/minimized viewports.
-        startup["startupinfo"] = info
-    process = subprocess.Popen(
-        args,
-        cwd=exe.parent,
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        **startup,
-    )
-    time.sleep(0.5)
-    if process.poll() is not None:
-        raise BackendError(
-            f"Hammer++ exited immediately with code {process.returncode}; verify SDK and GameConfig.txt"
-        )
-    return {
-        "pid": process.pid,
-        "command": args,
-        "map": str(path),
-        "status": "launched",
-        "verification": "Process launch only. Use editor-capture to verify that the map rendered; existing editor instances may receive the open request.",
-    }
+    return native_session.open_editor(project, config, name, timeout)
+
+
+def close_editor(project: Project, config: dict, pid: int) -> dict:
+    from .native_session import close_editor as close
+
+    return close(project, config, pid)
+
+
+def save_editor(
+    project: Project, config: dict, pid: int, expected_revision: str
+) -> dict:
+    from .native_session import save_editor as save
+
+    return save(project, config, pid, expected_revision)
 
 
 def rea_probe(project: Project, config: dict, target: str) -> dict:
@@ -354,7 +340,7 @@ def rea_probe(project: Project, config: dict, target: str) -> dict:
     rea = configured_path(project, config, "rea")
     if not rea or not rea.is_file():
         raise BackendError(
-            "Configure rea to the REA JavaScript CLI entrypoint (dist/cli.js), or run REA directly as described in docs/setup.md"
+            "Configure rea to REA's runnable JavaScript CLI entrypoint (scripts/rea.mjs); see docs/setup.md"
         )
     artifact = (
         configured_path(project, config, target)
@@ -368,9 +354,13 @@ def rea_probe(project: Project, config: dict, target: str) -> dict:
     node = shutil.which("node")
     if not node:
         raise BackendError("REA requires a compatible Node.js runtime")
+    wrapper = rea.parent.parent / "scripts" / "rea.mjs"
+    if rea.parent.name == "dist" and wrapper.is_file():
+        rea = wrapper
     result = subprocess.run(
-        [node, str(rea), "inspect-pe-resources", str(artifact), "--json"],
+        [node, str(rea), "inspect-pe-resources", str(artifact), "--format", "json"],
         capture_output=True,
+        stdin=subprocess.DEVNULL,
         text=True,
         timeout=60,
         creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
@@ -384,4 +374,14 @@ def rea_probe(project: Project, config: dict, target: str) -> dict:
                 "stdout": result.stdout[-4000:],
             },
         )
-    return json.loads(result.stdout)
+    try:
+        return json.loads(result.stdout)
+    except json.JSONDecodeError as exc:
+        raise BackendError(
+            "REA returned no valid JSON; configure its runnable CLI entrypoint",
+            {
+                "entrypoint": str(rea),
+                "stderr": result.stderr[-4000:],
+                "stdout": result.stdout[-4000:],
+            },
+        ) from exc

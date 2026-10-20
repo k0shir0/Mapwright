@@ -15,7 +15,11 @@ from mcp.client.stdio import stdio_client
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--workspace", default=".")
+    parser.add_argument(
+        "--workspace",
+        default=".",
+        help="Existing workspace with configured legacy CS:GO compilers",
+    )
     args = parser.parse_args()
     root = Path(args.workspace).resolve(strict=True)
     folder = ".local/kz-verification/" + uuid.uuid4().hex

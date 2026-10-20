@@ -315,6 +315,20 @@ class ProjectTests(unittest.TestCase):
         with self.project.locked(), self.assertRaisesRegex(vmf.MapError, "locked"):
             self.edit({"op": "delete", "id": 2})
 
+    @unittest.skipUnless(os.name == "nt", "Windows extended path prefixes")
+    def test_extended_path_resolution_preserves_workspace_boundary(self):
+        prefixed = "\\\\?\\" + str(self.root)
+        project = Project(prefixed)
+        self.assertEqual(project.root, self.root)
+        target = self.root / "nested" / "new.vmf"
+        # realpath can return this prefix while another request creates nested.
+        with patch.object(Path, "resolve", return_value=Path("\\\\?\\" + str(target))):
+            self.assertEqual(project.confined("nested/new.vmf"), target)
+        outside = self.root.parent / "outside.vmf"
+        with patch.object(Path, "resolve", return_value=Path("\\\\?\\" + str(outside))):
+            with self.assertRaisesRegex(vmf.MapError, "inside"):
+                project.confined("link/outside.vmf")
+
     def test_symlink_escape(self):
         with tempfile.TemporaryDirectory(dir=TEST_ROOT) as external:
             link = self.root / "link"
