@@ -11,8 +11,73 @@ from .backend import BackendError, load_config
 from .project import Project
 from .vmf import MapError
 
+ARGUMENT_HELP = {
+    "path": "VMF path relative to the configured workspace",
+    "expected_revision": "Current SHA-256 revision from inspect; stale writes are refused",
+    "operations": "Atomic edit operations as a JSON array or @file (process-CWD-relative)",
+    "query": "Case-insensitive text to match; empty matches all entries",
+    "offset": "Zero-based offset for the next page",
+    "limit": "Maximum entries or source characters to return in this page",
+    "token": "Recovery/checkpoint token returned by the corresponding operation",
+    "pid": "Owned Hammer process ID returned by editor-open",
+    "template": "Initial map contents; kz-room includes GOKZ timer zones and spawns",
+    "id": "VMF object ID; supply kind when IDs are reused across namespaces",
+    "kind": "Object namespace or catalog category to inspect",
+    "dry_run": "Preview the result without changing authoring files",
+    "mode": "bsp runs VBSP only; fast/full also run VVIS and HDR VRAD",
+    "timeout": "Total operation deadline in seconds",
+    "output": "New output path inside the workspace; existing files are preserved",
+    "method": "auto tries native GPU readback; viewport requires it; window captures UI chrome",
+    "classname": "Exact entity class to describe, including inherited FGD fields",
+    "target": "Configured native executable to inspect with REA",
+    "after": "Return actions after this stable sequence cursor (zero starts history)",
+    "action_id": "Permanent action ID returned in a result's timeline field",
+    "expected_head": "Current timeline HEAD from timeline-status; prevents stale checkout",
+    "category": "Artifact category to list; empty includes all categories",
+    "paths": "Workspace files or folders to include in the recoverable checkpoint",
+    "label": "Description retained with the checkpoint",
+    "minimum": "Minimum X Y Z coordinates of the spatial search bounds",
+    "maximum": "Maximum X Y Z coordinates of the spatial search bounds",
+    "start": "Starting solid or side selector as JSON or @file",
+    "end": "Landing solid or side selector as JSON or @file",
+    "landing": "Landing solid or top-face selector as JSON or @file",
+    "minimum_mbh": "Server-specific minimum multibhop distance in Source units",
+    "min": "Exterior minimum X Y Z coordinates (room bounds are interior)",
+    "max": "Exterior maximum X Y Z coordinates (room bounds are interior)",
+    "material": "Material name without materials/ prefix or .vmt extension",
+    "face_materials": "JSON object of per-face material overrides or @file",
+    "parent_id": "World/entity ID which will own the new brush",
+    "parent_kind": "Namespace of parent-id; world or entity",
+    "thickness": "Positive room wall thickness in Source units",
+    "origin": "Entity origin X Y Z in Source units",
+    "properties": "JSON keyvalues or @file; null deletes a key in set-properties",
+    "event": "Output event name, such as OnStartTouch",
+    "input": "Input invoked on the output target entity",
+    "parameter": "Optional output input parameter",
+    "delay": "Nonnegative output delay in seconds",
+    "times": "Number of firings; -1 means unlimited",
+    "delta": "Translation X Y Z in Source units with texture lock",
+    "source": "Native VMF source text or @file for replace-source; external file for import-reference",
+    "tool": "Shared MCP tool name to call; schema describes its JSON arguments",
+}
+
 
 class Parser(argparse.ArgumentParser):
+    def add_argument(self, *args, **kwargs):
+        if "help" not in kwargs:
+            dest = kwargs.get("dest", args[0].lstrip("-").replace("-", "_"))
+            key = {"expect": "expected_revision", "ops": "operations"}.get(dest, dest)
+            field = getattr(self, "tool_schema", {}).get("properties", {}).get(key, {})
+            kwargs["help"] = field.get("description") or ARGUMENT_HELP.get(key)
+            if not kwargs["help"]:
+                kwargs["help"] = key.replace("_", " ").capitalize()
+            if "default" in kwargs and kwargs["default"] not in (
+                None,
+                argparse.SUPPRESS,
+            ):
+                kwargs["help"] += " (default: %(default)s)"
+        return super().add_argument(*args, **kwargs)
+
     def error(self, message):
         raise MapError(message)
 
@@ -37,6 +102,8 @@ COMMANDS = {
     "redo": "redo_map",
     "compile": "compile_map",
     "editor-open": "open_editor",
+    "editor-save": "save_editor",
+    "editor-close": "close_editor",
     "editor-capture": "capture_editor",
     "entities": "entity_catalog",
     "assets": "asset_catalog",
@@ -50,6 +117,10 @@ COMMANDS = {
     "resume-recovery": "resume_recovery",
     "lock-status": "lock_status",
     "recover-lock": "recover_lock",
+    "timeline-status": "timeline_status",
+    "action-history": "action_history",
+    "action": "inspect_action",
+    "checkout-action": "checkout_action",
 }
 COMMANDS.update({name.replace("_", "-"): name for name in KZ_TOOLS})
 COMMANDS["kz-measure"] = "kz_measure_jumps"
@@ -86,12 +157,13 @@ def parser():
 
     class Commands:
         def add_parser(self, name, **kwargs):
-            description = TOOLS.get(COMMANDS.get(name, name), {}).get(
-                "description", kwargs.get("help", "")
-            )
-            return subparsers.add_parser(
+            tool = TOOLS.get(COMMANDS.get(name, name), {})
+            description = tool.get("description", kwargs.get("help", ""))
+            command_parser = subparsers.add_parser(
                 name, **{**kwargs, "help": description, "description": description}
             )
+            command_parser.tool_schema = tool.get("inputSchema", {})
+            return command_parser
 
     commands = Commands()
     commands.add_parser("doctor", help=TOOLS["doctor"]["description"])
@@ -144,6 +216,13 @@ def parser():
     for command in ("validate", "history", "editor-open"):
         sub = commands.add_parser(command)
         sub.add_argument("path")
+        if command == "editor-open":
+            sub.add_argument("--timeout", type=int, default=30)
+    for command in ("editor-save", "editor-close"):
+        sub = commands.add_parser(command)
+        sub.add_argument("pid", type=int)
+        if command == "editor-save":
+            sub.add_argument("--expect", required=True)
     for command in ("edit", "undo", "redo", "compile"):
         sub = commands.add_parser(command)
         sub.add_argument("path")
@@ -163,7 +242,9 @@ def parser():
     capture = commands.add_parser("editor-capture")
     capture.add_argument("pid", type=int)
     capture.add_argument("output")
-    capture.add_argument("--method", choices=["window", "screen"], default="window")
+    capture.add_argument(
+        "--method", choices=["auto", "viewport", "window"], default="auto"
+    )
     for command in ("entities", "assets"):
         sub = commands.add_parser(command)
         sub.add_argument("--query", default="")
@@ -208,6 +289,20 @@ def parser():
     commands.add_parser("lock-status")
     sub = commands.add_parser("recover-lock")
     sub.add_argument("--expect", required=True)
+    commands.add_parser("timeline-status")
+    sub = commands.add_parser("action-history")
+    sub.add_argument("--after", type=int, default=0)
+    sub.add_argument("--limit", type=int, default=100)
+    sub = commands.add_parser("action")
+    sub.add_argument("action_id")
+    sub.add_argument("--offset", type=int, default=0)
+    sub.add_argument("--limit", type=int, default=100)
+    sub = commands.add_parser("checkout-action")
+    sub.add_argument(
+        "target", help="Action ID whose saved after-state will be restored"
+    )
+    sub.add_argument("--expected-head", required=True)
+    sub.add_argument("--dry-run", action="store_true")
     for command, action in COMMANDS.items():
         if action not in KZ_TOOLS:
             continue

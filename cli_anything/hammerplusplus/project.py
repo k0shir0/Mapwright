@@ -8,6 +8,7 @@ import json
 import os
 from pathlib import Path
 import tempfile
+import threading
 from datetime import datetime, timezone
 import uuid
 from typing import Any
@@ -24,6 +25,20 @@ def decode(data: bytes) -> tuple[str, str]:
         return data.decode("utf-8"), "utf-8"
     except UnicodeDecodeError:
         return data.decode("cp1252"), "cp1252"
+
+
+def resolved_path(path: str | Path, *, strict: bool = False) -> Path:
+    path = Path(path).resolve(strict=strict)
+    # Windows realpath can retain its optional extended prefix if another
+    # thread creates a previously missing directory during resolution.
+    # Normalize both workspace and candidate after following junctions.
+    if os.name == "nt":
+        value = str(path)
+        if value.startswith("\\\\?\\UNC\\"):
+            path = Path("\\\\" + value[8:])
+        elif value.startswith("\\\\?\\") and len(value) > 6 and value[5:7] == ":\\":
+            path = Path(value[4:])
+    return path
 
 
 def atomic_write(path: Path, data: bytes, *, exclusive: bool = False):
@@ -45,13 +60,14 @@ def atomic_write(path: Path, data: bytes, *, exclusive: bool = False):
 
 class Project:
     def __init__(self, root: str | Path):
-        self.root = Path(root).resolve(strict=True)
+        self.root = resolved_path(root, strict=True)
         if not self.root.is_dir():
             raise vmf.MapError("Workspace must be an existing directory")
         self.session_id = uuid.uuid4().hex
+        self._lock_state = threading.local()
 
     def confined(self, name: str | Path) -> Path:
-        path = (self.root / name).resolve()
+        path = resolved_path(self.root / name)
         if not path.is_relative_to(self.root) or path == self.root:
             raise vmf.MapError("Path must be inside the configured workspace")
         return path
@@ -69,6 +85,18 @@ class Project:
 
     @contextmanager
     def locked(self):
+        # The action coordinator owns the outer transaction; existing map and
+        # checkpoint methods may enter it again on the same worker thread.
+        depth = getattr(self._lock_state, "depth", 0)
+        if depth:
+            if not getattr(self._lock_state, "action", False):
+                raise vmf.MapError("Workspace is locked by another write")
+            self._lock_state.depth += 1
+            try:
+                yield
+            finally:
+                self._lock_state.depth -= 1
+            return
         state = self.confined(".hammer-agent")
         state.mkdir(exist_ok=True)
         lock = self.confined(".hammer-agent/write.lock")
@@ -89,9 +117,24 @@ class Project:
                         }
                     )
                 )
+                stream.flush()
+                os.fsync(stream.fileno())
+            self._lock_state.depth = 1
             yield
         finally:
+            self._lock_state.depth = 0
             lock.unlink()
+
+    @contextmanager
+    def action_locked(self):
+        """Only the shared dispatcher may authorize nested implementation writes."""
+        with self.locked():
+            previous = getattr(self._lock_state, "action", False)
+            self._lock_state.action = True
+            try:
+                yield
+            finally:
+                self._lock_state.action = previous
 
     def read(self, name: str) -> tuple[Path, bytes, str, str]:
         path = self.map_path(name)
@@ -228,6 +271,29 @@ class Project:
                 raise vmf.MapError("Map already exists; create never overwrites")
             text = vmf.new_map()
             if template in ("csgo-room", "kz-room"):
+                # Give generated rooms a saved view inside their playable volume
+                # for a useful, reproducible terminal capture.
+                camera = vmf.parse(text).blocks("cameras")[0]
+                text = vmf.replace(
+                    text,
+                    [
+                        (
+                            camera.start,
+                            camera.end,
+                            vmf.block(
+                                "cameras",
+                                {"activecamera": "0"},
+                                vmf.block(
+                                    "camera",
+                                    {
+                                        "position": "[-256 -256 96]",
+                                        "look": "[128 0 64]",
+                                    },
+                                ),
+                            ),
+                        )
+                    ],
+                )
                 operations = [
                     dict(op="add_room", min=[-512, -512, 0], max=[512, 512, 256]),
                     dict(

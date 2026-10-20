@@ -1,8 +1,6 @@
 """One discoverable command contract shared by the CLI and MCP transport."""
 
 import jsonschema
-import time
-import uuid
 
 from . import backend, catalog
 from .project import Project
@@ -193,7 +191,7 @@ TOOLS = {
         False,
     ),
     "inspect_editor": spec(
-        "Inspect actual Hammer++ menus, windows and controls by verified PID. Windows and desktop extra required. Native UI fallback; inspect enabled dialogs before acting.",
+        "Inspect an owned Hammer++ session's menus, windows and controls on its private Windows desktop. Use the PID returned by open_editor. The user's desktop is unchanged; desktop extra required.",
         {
             "pid": {"type": "integer", "minimum": 1},
             "limit": {"type": "integer", "minimum": 1, "maximum": 1000},
@@ -201,21 +199,15 @@ TOOLS = {
         ["pid"],
     ),
     "editor_action": spec(
-        "Dispatch native Hammer++ actions using inspected labels/owned handles. Windows and desktop extra required. Checkpoint saved map files before GUI edits; unsaved GUI state requires Hammer undo. Verify state and capture afterward.",
+        "Send semantic menu/control commands to an owned private-desktop Hammer++ session. Staged document checkpoints are recorded before/after actions; inspect checkpointed/document_reversible and resulting controls. save_editor commits to the source map. No user keyboard or mouse input.",
         {
             "pid": {"type": "integer", "minimum": 1},
             "action": {
                 "enum": [
                     "menu",
-                    "keys",
                     "text",
                     "select",
                     "invoke",
-                    "click",
-                    "double_click",
-                    "drag",
-                    "scroll",
-                    "focus",
                     "restore",
                     "maximize",
                     "close",
@@ -224,13 +216,6 @@ TOOLS = {
             "hwnd": INTEGER,
             "menu": STRING,
             "text": STRING,
-            "keys": STRING,
-            "x": INTEGER,
-            "y": INTEGER,
-            "end_x": INTEGER,
-            "end_y": INTEGER,
-            "button": {"enum": ["left", "right", "middle"]},
-            "steps": {"type": "integer", "minimum": -100, "maximum": 100},
         },
         ["pid", "action"],
         False,
@@ -311,17 +296,29 @@ TOOLS = {
         False,
     ),
     "open_editor": spec(
-        "Launch configured Hammer++ with this VMF. Does not save/reload existing work or prove the map rendered.",
-        {"path": MAP},
+        "Open a staged copy of this VMF in an owned Hammer++ session on a private Windows desktop. Handles known startup dialogs and waits for the requested map title; returns owned PID/session ID. No user desktop switch. Does not prove GPU rendering.",
+        {"path": MAP, "timeout": {"type": "integer", "minimum": 1, "maximum": 120}},
         ["path"],
         False,
     ),
+    "save_editor": spec(
+        "Save the owned editor's staged VMF, verify readback, then commit to its source map through a revision-checked transaction and action history. Fails on modal dialogs or external source edits.",
+        {"pid": {"type": "integer", "minimum": 1}, "expected_revision": REVISION},
+        ["pid", "expected_revision"],
+        False,
+    ),
+    "close_editor": spec(
+        "Close only the owned private-desktop editor session and its helpers. Retains staged files and receipts; returns cleanup evidence. Never closes the user's editor.",
+        {"pid": {"type": "integer", "minimum": 1}},
+        ["pid"],
+        False,
+    ),
     "capture_editor": spec(
-        "Capture configured Hammer++ to a new PNG on Windows. window uses PrintWindow (GPU viewports may be blank); screen requires desktop extra and an unobscured window. Inspect the image for actual rendering.",
+        "Capture an owned private-desktop Hammer++ viewport to a new workspace PNG using native render-thread readback. auto tries the verified renderer profile then explicitly reports any fallback to UI-only PrintWindow; viewport requires GPU readback, window captures UI chrome. No focus or user desktop capture.",
         {
             "pid": {"type": "integer", "minimum": 1},
             "output": STRING,
-            "method": {"enum": ["window", "screen"]},
+            "method": {"enum": ["auto", "viewport", "window"]},
         },
         ["pid", "output"],
         False,
@@ -447,8 +444,36 @@ for op in OPERATIONS["oneOf"]:
 
 TOOLS.update(
     {
+        "timeline_status": spec(
+            "Read the saved-file timeline HEAD, pending actions and managed scope. Editor memory/undo stacks are excluded.",
+            {},
+            [],
+        ),
+        "action_history": spec(
+            "Read permanent indexed action history, including rejected/failed/read-only requests. after is a stable sequence cursor.",
+            {
+                "after": {"type": "integer", "minimum": 0},
+                "limit": {"type": "integer", "minimum": 1, "maximum": 1000},
+            },
+            [],
+        ),
+        "inspect_action": spec(
+            "Inspect an action's result/error and paginated before/after saved-file hashes; every action ID remains addressable.",
+            {"action_id": {"type": "string", "pattern": "^[a-f0-9]{32}$"}, **PAGE},
+            ["action_id"],
+        ),
+        "checkout_action": spec(
+            "Restore the saved managed file state after any finalized action, preserving future history for redo. Requires current HEAD. External changes are snapshotted and cause refusal; inspect the preserved action and retry. Unsaved GUI state is excluded.",
+            {
+                "target": {"type": "string", "pattern": "^[a-f0-9]{32}$"},
+                "expected_head": {"type": "string", "pattern": "^[a-f0-9]{32}$"},
+                "dry_run": {"type": "boolean"},
+            },
+            ["target", "expected_head"],
+            False,
+        ),
         "operation_log": spec(
-            "Read paginated workspace JSONL operation outcomes, timestamps, session/call IDs and errors. Logs rotate at 4 MiB; source bodies are hashed.",
+            "Read paginated permanent action events and errors. Source bodies are hashed; action_history offers indexed sequence cursors.",
             PAGE,
             [],
         ),
@@ -542,6 +567,9 @@ for name, tool in TOOLS.items():
             "restore_checkpoint",
             "resume_recovery",
             "recover_lock",
+            "checkout_action",
+            "save_editor",
+            "close_editor",
         }
         or name.startswith("map_")
         and name != "map_history"
@@ -550,6 +578,8 @@ for name, tool in TOOLS.items():
         "import_reference_map",
         "compile_map",
         "open_editor",
+        "save_editor",
+        "close_editor",
         "inspect_editor",
         "editor_action",
         "capture_editor",
@@ -577,6 +607,22 @@ def _execute(project: Project, config: dict, action: str, args: dict) -> dict:
         ) from exc
     values = dict(args)
     path = values.pop("path", None)
+    if action in {
+        "timeline_status",
+        "action_history",
+        "inspect_action",
+        "checkout_action",
+    }:
+        from . import timeline
+
+        if action == "checkout_action":
+            return timeline.checkout(project, config, **values)
+        ledger = timeline.Timeline(project)
+        return {
+            "timeline_status": ledger.status,
+            "action_history": ledger.history,
+            "inspect_action": ledger.inspect,
+        }[action](**values)
     if action in KZ_TOOLS:
         from . import kz
 
@@ -653,7 +699,7 @@ def _execute(project: Project, config: dict, action: str, args: dict) -> dict:
         except backend.BackendError:
             raise
         except Exception as exc:
-            # Win32 and pywinauto exceptions are not necessarily OSError subclasses.
+            # Native binding exceptions are not necessarily OSError subclasses.
             raise backend.BackendError(
                 f"Native editor operation failed: {exc}"
             ) from exc
@@ -676,7 +722,9 @@ def _execute(project: Project, config: dict, action: str, args: dict) -> dict:
     if action == "compile_map":
         return backend.compile_map(project, config, path, **values)
     if action == "open_editor":
-        return backend.open_editor(project, config, path)
+        return backend.open_editor(project, config, path, **values)
+    if action in {"save_editor", "close_editor"}:
+        return getattr(backend, action)(project, config, **values)
     if action == "entity_catalog":
         return catalog.entities(project, config, **values)
     if action == "asset_catalog":
@@ -685,56 +733,17 @@ def _execute(project: Project, config: dict, action: str, args: dict) -> dict:
 
 
 def execute(project: Project, config: dict, action: str, args: dict) -> dict:
-    from . import workspace
+    from . import timeline
 
-    call_id = uuid.uuid4().hex
-    start = time.monotonic()
-    # Reading audit/recovery metadata remains a pure read and never logs itself.
-    record = action not in {
-        "operation_log",
-        "list_artifacts",
-        "read_artifact",
-        "inspect_checkpoint",
-        "lock_status",
-        "map_history",
-    }
-    event = {"call_id": call_id, "tool": action, **workspace.summary(args)}
-    warning = None
-
-    def write(status, **extra):
-        nonlocal warning
-        if record:
-            try:
-                workspace.log(project, {**event, "status": status, **extra})
-            except (OSError, ValueError) as exc:
-                warning = f"Operation audit unavailable: {exc}"
-
-    write("started")
-    try:
-        result = _execute(project, config, action, args)
-    except Exception as exc:
-        write(
-            "failed",
-            error=str(exc)[:4000],
-            elapsed_seconds=round(time.monotonic() - start, 3),
-        )
-        raise
-    write(
-        "completed",
-        revision=result.get("revision"),
-        **{
-            key: result[key]
-            for key in (
-                "token",
-                "reverse_checkpoint",
-                "recovery_token",
-                "valid",
-                "dry_run",
-            )
-            if key in result
-        },
-        elapsed_seconds=round(time.monotonic() - start, 3),
+    mutating = action in TOOLS and not TOOLS[action]["readonly"]
+    # Lock recovery has to inspect/remove the existing lock itself.
+    if action == "recover_lock" or isinstance(args, dict) and args.get("dry_run"):
+        mutating = False
+    return timeline.run(
+        project,
+        config,
+        action,
+        args,
+        lambda: _execute(project, config, action, args),
+        mutating=mutating,
     )
-    if warning:
-        result = {**result, "audit_warning": warning}
-    return result

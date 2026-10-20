@@ -138,7 +138,11 @@ def archive(project, name, folder, prefixes=None):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--workspace", default=".")
+    parser.add_argument(
+        "--workspace",
+        default=".",
+        help="Workspace root for isolated downloads, installation and configuration (default: current directory)",
+    )
     parser.add_argument(
         "--runtime",
         required=True,
@@ -147,8 +151,16 @@ def main():
     parser.add_argument(
         "--content", help="Legacy csgo content directory, defaults to RUNTIME/csgo"
     )
-    parser.add_argument("--install-dir", default=".local/csgo-editor")
-    parser.add_argument("--output-config", default="mapwright.local.json")
+    parser.add_argument(
+        "--install-dir",
+        default=".local/csgo-editor",
+        help="New installation directory relative to the workspace (default: .local/csgo-editor)",
+    )
+    parser.add_argument(
+        "--output-config",
+        default="mapwright.local.json",
+        help="New configuration path relative to the workspace (default: mapwright.local.json)",
+    )
     args = parser.parse_args()
     if os.name != "nt":
         parser.error("The native CS:GO editor installation requires Windows")
