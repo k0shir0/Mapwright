@@ -20,6 +20,7 @@ target-version = ["py311"]
 mcp = ["mcp>=1.26,<2"]
 source = ["srctools>=2.7,<3"]
 desktop = ["pywin32>=306; sys_platform == 'win32'", "Pillow>=10; sys_platform == 'win32'", "frida>=17.23.2,<18; sys_platform == 'win32'"]
+dev = ["black==26.3.1", "PyYAML==6.0.3"]
 
 [project.scripts]
 mapwright = "cli_anything.hammerplusplus.cli:entrypoint"

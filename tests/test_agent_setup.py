@@ -7,6 +7,7 @@ import sys
 import tempfile
 import tomllib
 import unittest
+from types import SimpleNamespace
 from unittest.mock import patch
 
 SCRIPT = Path(__file__).resolve().parents[1] / "scripts/setup_agent.py"
@@ -28,6 +29,33 @@ class AgentSetupTests(unittest.TestCase):
         self.home.mkdir()
         self.workspace.mkdir()
         self.command = self.root / "Mapwright/.venv/Scripts/mapwright.exe"
+
+    def native_config(self, checkout):
+        config = {
+            "game_dir": "legacy/csgo",
+            "fgd": ["legacy/base.fgd", "legacy/kz.fgd"],
+        }
+        for key in ("hammer", "vbsp", "vvis", "vrad", "bspsrc_java"):
+            config[key] = "legacy/bin/" + key + ".exe"
+        for name in [
+            "legacy/csgo/gameinfo.txt",
+            *config["fgd"],
+            *[config[k] for k in ("hammer", "vbsp", "vvis", "vrad", "bspsrc_java")],
+            *[
+                "legacy/bin/" + n
+                for n in (
+                    "tier0.dll",
+                    "vstdlib.dll",
+                    "filesystem_stdio.dll",
+                    "materialsystem.dll",
+                    "shaderapidx9.dll",
+                )
+            ],
+        ]:
+            path = checkout / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(b"fixture")
+        return config
 
     def test_jsonc_preserves_comments_other_servers_and_unknown_fields(self):
         original = """{
@@ -244,6 +272,15 @@ trust_level = "trusted"
             self.assertTrue((skills / "mapwright/references" / guide).is_file())
         setup_text = (skills / "mapwright-setup/SKILL.md").read_text()
         self.assertIn(str(SCRIPT).replace("\\", "/"), setup_text)
+        import re
+
+        for markdown in skills.rglob("*.md"):
+            for link in re.findall(r"\]\(([^)]+)\)", markdown.read_text("utf-8")):
+                if "://" not in link and not link.startswith("#"):
+                    self.assertTrue(
+                        (markdown.parent / link.split("#")[0]).exists(),
+                        (markdown, link),
+                    )
         self.assertEqual(
             setup.apply_changes(
                 setup.skill_changes(
@@ -279,13 +316,7 @@ trust_level = "trusted"
         checkout = self.root / "checkout"
         checkout.mkdir()
         (checkout / "mapwright.local.json").write_text(
-            json.dumps(
-                {
-                    "game_dir": "legacy/csgo",
-                    "hammer": "legacy/bin/hammer.exe",
-                    "fgd": ["a.fgd", "b.fgd"],
-                }
-            )
+            json.dumps(self.native_config(checkout))
         )
         changes, native = setup.native_plan(checkout, self.workspace, "auto", None, {})
         self.assertEqual(native["status"], "reuse")
@@ -297,6 +328,168 @@ trust_level = "trusted"
         (self.workspace / "mapwright.local.json").write_text("{broken")
         with self.assertRaises(ValueError):
             setup.native_plan(checkout, self.workspace, "auto", None, {})
+
+    def test_explicit_runtime_recovers_stale_config_and_partial_install(self):
+        runtime = self.root / "owned runtime"
+        self.native_config(self.root)
+        (self.root / "legacy").rename(runtime)
+        (runtime / "csgo/pak01_dir.vpk").write_bytes(b"content fixture")
+        (self.workspace / "mapwright.local.json").write_text('{"hammer":"missing.exe"}')
+        (self.workspace / ".local/csgo-editor/bin").mkdir(parents=True)
+        with patch.object(setup, "os", SimpleNamespace(name="nt")):
+            changes, native = setup.native_plan(
+                self.root, self.workspace, "required", runtime, {}
+            )
+        self.assertEqual(changes, [])
+        self.assertEqual(native["status"], "install")
+        self.assertEqual(native["runtime"], str(runtime))
+        self.assertNotEqual(native["install_dir"], ".local/csgo-editor")
+        self.assertFalse((self.workspace / native["install_dir"]).exists())
+        self.assertTrue(native["stale_configurations"])
+        self.assertEqual(
+            json.loads((self.workspace / "mapwright.local.json").read_text()),
+            {"hammer": "missing.exe"},
+        )
+
+    def test_discovery_uses_original_content_instead_of_generated_shim(self):
+        self.native_config(self.root)
+        original = self.root / "legacy"
+        (original / "csgo/pak01_dir.vpk").write_bytes(b"content fixture")
+        generated = self.root / ".local/csgo-editor"
+        generated.mkdir(parents=True)
+        (generated / "installation.json").write_text(
+            json.dumps({"runtime": str(original)})
+        )
+        self.assertIn(original, setup.runtime_candidates(self.root, {}))
+        self.assertNotIn(generated, setup.runtime_candidates(self.root, {}))
+        (original / "csgo/pak01_dir.vpk").unlink()
+        self.assertNotIn(original, setup.runtime_candidates(self.root, {}))
+
+    def test_moved_workspace_recovers_original_runtime_provenance(self):
+        self.native_config(self.root)
+        original = self.root / "legacy"
+        (original / "csgo/pak01_dir.vpk").write_bytes(b"content fixture")
+        generated = self.workspace / ".local/csgo-editor"
+        generated.mkdir(parents=True)
+        (generated / "installation.json").write_text(
+            json.dumps({"runtime": str(original)})
+        )
+        (self.workspace / "mapwright.local.json").write_text(
+            '{"hammer":"old-location/hammer.exe"}'
+        )
+        with patch.object(setup, "os", SimpleNamespace(name="nt")):
+            _, native = setup.native_plan(
+                self.root,
+                self.workspace,
+                "required",
+                None,
+                {"ProgramFiles(x86)": str(self.home)},
+            )
+        self.assertEqual(native["status"], "install")
+        self.assertEqual(native["runtime"], str(original))
+
+    def test_bootstrap_repairs_inheritance_without_replacing_active_python(self):
+        checkout = self.root / "checkout"
+        checkout.mkdir()
+        (checkout / "pyproject.toml").write_text('[project]\nname="fixture"\n')
+        python, command = setup.bootstrap(checkout)
+        python.parent.mkdir(parents=True)
+        python.write_bytes(b"running interpreter fixture")
+        command.write_bytes(b"launcher fixture")
+        cfg = checkout / ".venv/pyvenv.cfg"
+        cfg.write_text("include-system-site-packages = true\nversion = 3.11\n")
+        stamp = checkout / ".local/agent-setup/runtime.json"
+        stamp.parent.mkdir(parents=True)
+        stamp.write_text(
+            json.dumps(
+                {
+                    "pyproject_sha256": setup.sha(
+                        (checkout / "pyproject.toml").read_bytes()
+                    )
+                }
+            )
+        )
+        import subprocess
+
+        with patch.object(
+            setup.subprocess, "run", return_value=subprocess.CompletedProcess([], 0)
+        ) as run:
+            setup.bootstrap(checkout, True)
+        self.assertIn("include-system-site-packages = false", cfg.read_text())
+        self.assertEqual(python.read_bytes(), b"running interpreter fixture")
+        self.assertTrue(all("venv" not in call.args[0] for call in run.call_args_list))
+        self.assertTrue(any("check" in call.args[0] for call in run.call_args_list))
+
+    def test_required_native_rejects_non_windows_and_missing_prerequisites(self):
+        with patch.object(setup, "os", SimpleNamespace(name="posix")):
+            with self.assertRaisesRegex(ValueError, "requires Windows"):
+                setup.native_plan(self.root, self.workspace, "required", None, {})
+        (self.workspace / "mapwright.local.json").write_text('{"hammer":"missing.exe"}')
+        with patch.object(setup, "runtime_candidates", return_value=[]):
+            _, native = setup.native_plan(self.root, self.workspace, "auto", None, {})
+        self.assertEqual(native["status"], "offline")
+        self.assertTrue(native["stale_configurations"])
+
+    def test_native_install_creates_workspace_and_preserves_config_until_success(self):
+        from contextlib import redirect_stdout
+        import io
+        import subprocess
+
+        workspace = self.root / "new workspace"
+        config = workspace / "mapwright.local.json"
+        plan = {
+            "status": "install",
+            "runtime": "owned-runtime",
+            "install_dir": ".local/csgo-editor",
+        }
+        arguments = [
+            "--client",
+            "codex",
+            "--home",
+            str(self.home),
+            "--workspace",
+            str(workspace),
+            "--native",
+            "auto",
+            "--yes",
+        ]
+
+        def install(command, **kwargs):
+            self.assertTrue(workspace.is_dir())
+            self.assertFalse((workspace / ".codex/config.toml").exists())
+            self.assertFalse(config.exists())
+            output = workspace / command[command.index("--output-config") + 1]
+            output.parent.mkdir(parents=True, exist_ok=True)
+            output.write_text('{"hammer":"installed.exe"}')
+            return subprocess.CompletedProcess(command, 0)
+
+        with (
+            patch.object(
+                setup, "bootstrap", return_value=(Path(sys.executable), self.command)
+            ),
+            patch.object(setup, "native_plan", return_value=([], dict(plan))),
+            patch.object(setup, "verify_server", return_value={}),
+            patch.object(setup.subprocess, "run", side_effect=install),
+            redirect_stdout(io.StringIO()),
+        ):
+            self.assertEqual(setup.main(arguments), 0)
+        self.assertEqual(json.loads(config.read_text()), {"hammer": "installed.exe"})
+
+        config.write_text('{"hammer":"preserved.exe"}')
+        with (
+            patch.object(
+                setup, "bootstrap", return_value=(Path(sys.executable), self.command)
+            ),
+            patch.object(setup, "native_plan", return_value=([], dict(plan))),
+            patch.object(
+                setup.subprocess,
+                "run",
+                side_effect=subprocess.CalledProcessError(1, "installer"),
+            ),
+            redirect_stdout(io.StringIO()),
+        ):
+            self.assertEqual(setup.main(arguments), 1)
+        self.assertEqual(json.loads(config.read_text()), {"hammer": "preserved.exe"})
 
     def test_cli_dry_run_leaves_isolated_home_and_workspace_unchanged(self):
         import subprocess
