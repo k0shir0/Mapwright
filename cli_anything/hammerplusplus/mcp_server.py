@@ -48,7 +48,7 @@ def serve(project: Project, config: dict):
             "KZ behavior depends on exact climb_* names and GOKZ plugin settings. kz-room supplies main timer zones/course start. "
             "Every tool request has a permanent action receipt; use timeline_status, action_history, inspect_action and checkout_action for saved-state recovery with retained future history. "
             "open_editor owns a private Windows desktop and staged map. Use inspected semantic controls, then save_editor with the source revision; close_editor releases its process tree. "
-            "Native actions expose checkpointed/document_reversible; check them and inspect resulting state. PrintWindow can omit GPU viewports. Compile fresh and test the intended GOKZ mode in-game. "
+            "Native actions expose checkpointed/document_reversible; check them and inspect resulting state. capture_editor auto uses native viewport readback on verified renderer DLLs, with explicit UI-only fallback; viewport requires GPU capture and window captures UI chrome. Compile fresh and test the intended GOKZ mode in-game. "
             "Static checks cannot prove movement feasibility; unsupported geometry is reported. Read hammer://guide/kz for the workflow."
         ),
     )
@@ -260,6 +260,9 @@ open_editor launches a staged copy on an owned private Windows desktop. Inspect 
 and controls, use semantic editor_action messages, and check document_reversible.
 save_editor commits staged bytes with the source map's expected_revision. close_editor
 releases the owned session. Native UI undo/camera state is separate from saved VMF state.
+capture_editor method=viewport requires actual render-thread pixels; method=window
+captures UI chrome. auto reports fallback explicitly. Uniform frames carry warnings;
+inspect the image and camera/map state before claiming visible geometry.
 Named checkpoints are also available for explicit file/folder snapshots.
 inspect_checkpoint lists every current revision needed for restore_checkpoint;
 restoration keeps a reverse checkpoint and resumable recovery receipt. Never overwrite

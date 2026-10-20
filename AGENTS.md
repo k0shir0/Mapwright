@@ -19,6 +19,9 @@ Target: KZ-first legacy CS:GO Source 1 VMF/VBSP and Hammer++.
 owns workspace boundaries, revisions and map history. `kz.py` analyzes maps;
 `workspace.py` handles logs/checkpoints. `backend.py`, `catalog.py`,
 `reference.py`, `desktop.py`, and `windows.py` integrate native tools/data.
+`timeline.py` owns permanent action history; `native_session.py` owns private
+desktops/jobs. `render_capture.py` runs bounded, DLL-profile-checked GPU readback
+in a disposable worker. Verify new native ABI profiles before enabling calls.
 
 Preserve untouched VMF bytes, duplicate keys and unknown blocks. Keep whole-source
 replacement explicit and revision-checked. Update both transports when changing

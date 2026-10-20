@@ -43,8 +43,10 @@ installs this skill with the linked guides bundled alongside it.
    dispatch, so read state and verify the saved VMF afterward; an acknowledgement
    alone does not establish a committed edit. Keep file transactions and native
    saves separate, with a fresh revision before the next file mutation.
-   Window captures of the private desktop may omit GPU viewports; do not infer
-   rendering from document readiness. Native actions checkpoint staged documents
+   Use `capture_editor method=viewport` for actual native render-thread pixels,
+   or `method=window` for UI controls. Default `auto` reports any UI-only fallback
+   explicitly. Read uniform-frame warnings; inspect the image and camera/map
+   state before claiming visible geometry. Native actions checkpoint staged documents
    where supported; inspect `checkpointed` and `document_reversible`.
 8. Test the compiled BSP on the intended server/mode before claiming playability.
 

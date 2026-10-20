@@ -608,6 +608,37 @@ class MCPEndToEndTests(unittest.TestCase):
 
         anyio.run(scenario)
 
+    def test_parallel_metadata_requests_keep_complete_immutable_receipts(self):
+        async def scenario():
+            async with stdio_client(self.parameters()) as (read, write):
+                async with ClientSession(read, write) as client:
+                    tools = await self.tools(client)
+                    completed = []
+
+                    async def request(index):
+                        name = "doctor" if index % 2 else "list_map_files"
+                        _, result = await self.invoke(client, tools, name)
+                        completed.append(result["timeline"]["action_id"])
+
+                    with anyio.fail_after(45):
+                        async with anyio.create_task_group() as group:
+                            for index in range(24):
+                                group.start_soon(request, index)
+                    self.assertEqual(len(set(completed)), 24)
+
+        anyio.run(scenario)
+        from cli_anything.hammerplusplus.project import Project
+
+        ledger = timeline.Timeline(Project(self.root))
+        actions = ledger.history(limit=1000)["actions"]
+        self.assertEqual(len(actions), 24)
+        self.assertTrue(all(row["status"] == "completed" for row in actions))
+        self.assertEqual(ledger.status()["pending"], [])
+        events = list((self.root / ".hammer-agent/timeline/events").glob("*.json"))
+        self.assertTrue(
+            all(json.loads(path.read_text("utf-8"))["action_id"] for path in events)
+        )
+
 
 @unittest.skipUnless(
     os.environ.get("MAPWRIGHT_NATIVE_E2E_CONFIG"), "Opt-in real native toolchain lane"
@@ -616,6 +647,7 @@ class RealNativeMCPEndToEndTests(MCPEndToEndTests):
     # Do not inherit portable scenarios into the opt-in class.
     test_every_portable_tool_over_installed_stdio_and_real_missing_native_errors = None
     test_native_transport_contracts_with_explicit_child_process_fixtures = None
+    test_parallel_metadata_requests_keep_complete_immutable_receipts = None
 
     def setUp(self):
         super().setUp()
@@ -694,10 +726,40 @@ class RealNativeMCPEndToEndTests(MCPEndToEndTests):
                                 menu=file_menu["label"] + "->" + save["label"],
                                 hwnd=window["hwnd"],
                             )
-                            captured, _ = await call(
-                                "capture_editor", pid=pid, output="native-window.png"
+                            captured, viewport = await call(
+                                "capture_editor",
+                                pid=pid,
+                                output="native-viewport.png",
+                                method="viewport",
                             )
                             self.assertEqual(captured.content[1].mimeType, "image/png")
+                            self.assertEqual(viewport["method"], "native-viewport")
+                            self.assertGreater(viewport["width"], 64)
+                            proof = ROOT / ".local/research/mcp-native-e2e"
+                            proof.mkdir(parents=True, exist_ok=True)
+                            shutil.copy2(
+                                self.root / "native-viewport.png",
+                                proof / "first-viewport-debug.png",
+                            )
+                            (proof / "first-viewport-debug.json").write_text(
+                                json.dumps(viewport, indent=2), encoding="utf-8"
+                            )
+                            self.assertTrue(
+                                viewport["content_has_variation"],
+                                "The generated room camera should show actual geometry",
+                            )
+                            self.assertNotIn("viewport_capture_error", viewport)
+                            self.assertTrue(viewport["capture_worker_exited"])
+                            await call(
+                                "capture_editor",
+                                pid=pid,
+                                output="native-window.png",
+                                method="window",
+                            )
+                            _, automatic = await call(
+                                "capture_editor", pid=pid, output="native-auto.png"
+                            )
+                            self.assertEqual(automatic["method"], "native-viewport")
                             _, saved = await call(
                                 "save_editor",
                                 pid=pid,
@@ -750,6 +812,10 @@ class RealNativeMCPEndToEndTests(MCPEndToEndTests):
         )
         if (self.root / "native-window.png").exists():
             shutil.copy2(self.root / "native-window.png", output / "native-window.png")
+        if (self.root / "native-viewport.png").exists():
+            shutil.copy2(
+                self.root / "native-viewport.png", output / "native-viewport.png"
+            )
 
     def test_crashed_mcp_host_closes_its_owned_native_session(self):
         async def scenario():

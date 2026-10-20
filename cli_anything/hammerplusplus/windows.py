@@ -24,13 +24,13 @@ def set_dpi_awareness():
 
 
 def capture_editor(
-    project: Project, config: dict, pid: int, output: str, method: str = "window"
+    project: Project, config: dict, pid: int, output: str, method: str = "auto"
 ) -> dict:
     from .native_session import request
 
-    if method != "window":
+    if method not in ("auto", "window", "viewport"):
         raise BackendError(
-            "Hidden sessions capture their owned window with PrintWindow; screen capture would capture the user's desktop"
+            "Owned sessions capture native viewports or their own windows; screen capture would capture the user's desktop"
         )
     return request(
         project, config, pid, "capture", {"output": output, "method": method}
@@ -115,8 +115,10 @@ def _capture_editor(
     if method != "window":
         raise BackendError("method must be window")
     width, height = rect.right - rect.left, rect.bottom - rect.top
-    if not 1 <= width <= 8192 or not 1 <= height <= 8192:
-        raise BackendError("Window dimensions exceed the capture limit")
+    if not (1 <= width <= 8192 and 1 <= height <= 8192 and width * height <= 8388608):
+        raise BackendError(
+            "Owned window exceeds the eight megapixel capture limit; restore a smaller private window or use viewport capture"
+        )
     user.GetDC.argtypes = [wintypes.HWND]
     user.GetDC.restype = wintypes.HDC
     user.ReleaseDC.argtypes = [wintypes.HWND, wintypes.HDC]

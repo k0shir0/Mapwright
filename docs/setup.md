@@ -81,6 +81,22 @@ continuous screen-capture loop runs during ordinary authoring.
 Sessions created by an MCP host also wait on that host's process handle and
 close if it crashes. One-shot CLI sessions persist until explicitly closed.
 
+`editor-capture --method viewport` requires actual Hammer render-thread RGB
+readback; `--method window` uses PrintWindow for UI chrome. The default `auto`
+tries viewport readback and reports any UI-only fallback as
+`viewport_capture_error`. GPU capture checks the loaded x86 material-system and
+shader DLL hashes against an observed ABI profile before making interface
+calls. Unknown profiles are refused; do not guess offsets for other SDK builds.
+Uniform actual pixels are retained with a warning, since an empty/off-map
+camera can produce an empty view. Inspect the image before claiming geometry.
+Capture skips cleared helper panes, with a limit of eight owned frame events
+and eight megapixels per image. Generated room templates include a saved camera.
+
+The desktop extra installs Python Frida for this bounded capture operation.
+It runs in a disposable worker, detaches, and exits before the tool returns;
+the broker does not retain the instrumentation controller. No Vulkan wrapper,
+Node, REA or foreground desktop access is required for capture.
+
 `editor-save` / `save_editor` saves that staged document, verifies its bytes,
 and commits them to the source VMF against the inspected source revision.
 `editor-close` / `close_editor` closes only the owned session and its helpers,

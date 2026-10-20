@@ -59,7 +59,7 @@ def main():
     if not args.map:
         project.create(source, "csgo-room")
     report = {
-        "scope": "Actual Win32 session, title readiness, inspection, PrintWindow, staged save and cleanup. GPU viewport content still requires image inspection."
+        "scope": "Actual Win32 session, native viewport readback, UI capture, guarded save, resource measurement and cleanup. Images require content inspection; this does not test gameplay."
     }
 
     def desktop_state():
@@ -96,7 +96,10 @@ def main():
                 "Requested map is not ready; inspect owned dialogs in the report"
             )
         report["capture"] = windows.capture_editor(
-            project, config, pid, prefix + "/window.png"
+            project, config, pid, prefix + "/viewport.png", method="viewport"
+        )
+        report["window_capture"] = windows.capture_editor(
+            project, config, pid, prefix + "/window.png", method="window"
         )
         report["save"] = backend.save_editor(
             project, config, pid, project.inspect(source)["revision"]
@@ -178,6 +181,8 @@ def main():
                     else "complete"
                 ),
                 "viewport_rendering_verified": False,
+                "native_gpu_readback_verified": report.get("capture", {}).get("method")
+                == "native-viewport",
             },
             indent=2,
         )

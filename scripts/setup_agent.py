@@ -716,7 +716,7 @@ def bootstrap(checkout, apply=False, hermes=False):
                 "import pathlib; import mcp, srctools, jsonschema; import cli_anything.hammerplusplus as package; assert pathlib.Path(package.__file__).resolve().parent == pathlib.Path("
                 + repr(str(checkout / "cli_anything/hammerplusplus"))
                 + "); "
-                + ("import pywinauto, PIL; " if os.name == "nt" else "")
+                + ("import win32api, win32job, PIL, frida; " if os.name == "nt" else "")
                 + ("import yaml" if hermes else ""),
             ],
             capture_output=True,
@@ -938,7 +938,7 @@ def main(argv=None):
                     for client, config, _ in targets
                 ],
                 "runtime_install": "repo .venv, editable [mcp,source,desktop]; no Node or REA required",
-                "reload": "Reload MCP/skills or start a new client session; existing conversations may retain their old tool catalog",
+                "reload": "Use supported client reload; otherwise continue through the installed absolute CLI command now. Persistent MCP/skills load in future client sessions",
             }
             if args.yes:
                 python, command = bootstrap(CHECKOUT, True, "hermes" in clients)

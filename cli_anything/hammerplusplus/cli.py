@@ -27,7 +27,7 @@ ARGUMENT_HELP = {
     "mode": "bsp runs VBSP only; fast/full also run VVIS and HDR VRAD",
     "timeout": "Total operation deadline in seconds",
     "output": "New output path inside the workspace; existing files are preserved",
-    "method": "window captures the owned hidden window; GPU viewport pixels may be omitted",
+    "method": "auto tries native GPU readback; viewport requires it; window captures UI chrome",
     "classname": "Exact entity class to describe, including inherited FGD fields",
     "target": "Configured native executable to inspect with REA",
     "after": "Return actions after this stable sequence cursor (zero starts history)",
@@ -242,7 +242,9 @@ def parser():
     capture = commands.add_parser("editor-capture")
     capture.add_argument("pid", type=int)
     capture.add_argument("output")
-    capture.add_argument("--method", choices=["window"], default="window")
+    capture.add_argument(
+        "--method", choices=["auto", "viewport", "window"], default="auto"
+    )
     for command in ("entities", "assets"):
         sub = commands.add_parser(command)
         sub.add_argument("--query", default="")

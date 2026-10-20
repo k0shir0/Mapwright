@@ -314,11 +314,11 @@ TOOLS = {
         False,
     ),
     "capture_editor": spec(
-        "Capture only the owned private-desktop Hammer++ window to a new workspace PNG, without capturing or focusing the user's desktop. PrintWindow can omit GPU viewport pixels; inspect the image before claiming rendering.",
+        "Capture an owned private-desktop Hammer++ viewport to a new workspace PNG using native render-thread readback. auto tries the verified renderer profile then explicitly reports any fallback to UI-only PrintWindow; viewport requires GPU readback, window captures UI chrome. No focus or user desktop capture.",
         {
             "pid": {"type": "integer", "minimum": 1},
             "output": STRING,
-            "method": {"enum": ["window"]},
+            "method": {"enum": ["auto", "viewport", "window"]},
         },
         ["pid", "output"],
         False,
@@ -699,7 +699,7 @@ def _execute(project: Project, config: dict, action: str, args: dict) -> dict:
         except backend.BackendError:
             raise
         except Exception as exc:
-            # Win32 and pywinauto exceptions are not necessarily OSError subclasses.
+            # Native binding exceptions are not necessarily OSError subclasses.
             raise backend.BackendError(
                 f"Native editor operation failed: {exc}"
             ) from exc
