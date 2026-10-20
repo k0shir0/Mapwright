@@ -23,7 +23,7 @@ from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 from mcp.shared.exceptions import McpError
 
-from cli_anything.hammerplusplus import timeline
+from cli.hammerplusplus import timeline
 
 ROOT = Path(__file__).resolve().parents[1]
 RUNS = ROOT / ".local/test-runs"
@@ -58,9 +58,9 @@ PNG = base64.b64decode(
 NATIVE_FIXTURE_SERVER = r"""
 import sys
 from pathlib import Path
-from cli_anything.hammerplusplus import backend,desktop,windows,timeline
-from cli_anything.hammerplusplus.project import Project
-from cli_anything.hammerplusplus.mcp_server import serve
+from cli.hammerplusplus import backend,desktop,windows,timeline
+from cli.hammerplusplus.project import Project
+from cli.hammerplusplus.mcp_server import serve
 import base64
 
 def result(tool, **data):
@@ -146,7 +146,7 @@ class MCPEndToEndTests(unittest.TestCase):
         else:
             args = [
                 "-m",
-                "cli_anything.hammerplusplus",
+                "cli.hammerplusplus",
                 "--workspace",
                 str(self.root),
                 "mcp",
@@ -627,7 +627,7 @@ class MCPEndToEndTests(unittest.TestCase):
                     self.assertEqual(len(set(completed)), 24)
 
         anyio.run(scenario)
-        from cli_anything.hammerplusplus.project import Project
+        from cli.hammerplusplus.project import Project
 
         ledger = timeline.Timeline(Project(self.root))
         actions = ledger.history(limit=1000)["actions"]

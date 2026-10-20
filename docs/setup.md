@@ -19,7 +19,7 @@ machine rather than copying a previous machine's configuration or environment.
 | Python packages | Setup installs the declared `[mcp,source,desktop]` extras from `pyproject.toml`; pip installs transitive dependencies and build-time setuptools. Hermes additionally installs setup-only PyYAML. |
 | Network | First install needs the configured Python package index and, for native tools, the pinned GitHub releases/raw file in `setup_local.py`. Allow their download redirects. Preserve TLS verification; report proxy, certificate or policy failures explicitly. Cached reruns need no new downloads when dependencies are already satisfied. |
 | Legacy CS:GO runtime/content | Native authoring requires an owned, entitled Source 1 installation with `bin` engine DLLs, `csgo/gameinfo.txt`, and stock `csgo/pak01_dir.vpk` plus its VPK chunks. The agent discovers Steam libraries or accepts `--runtime`. It cannot supply Steam credentials or entitlement. Restore the entitled legacy game/SDK through Steam if absent; an SDK installation should be initialized once as directed by Hammer++'s bundled README. |
-| Native tools and assets | Setup downloads hash-verified Hammer++ 8864, Tools++, HammerAddons, GOKZ FGD and BSPSource with bundled Java. It generates editor settings, content mounts and workspace config. No separate Java, Node, REA, Ghidra, CLI-Anything or Visual Studio installation is needed for ordinary mapping. |
+| Native tools and assets | Setup downloads hash-verified Hammer++ 8864, Tools++, HammerAddons, GOKZ FGD and BSPSource with bundled Java. It generates editor settings, content mounts and workspace config. No separate Java, Node, REA, Ghidra or Visual Studio installation is needed for ordinary mapping. |
 | Windows graphics session | Native editing needs a logged-in Windows desktop session with access to `WinSta0`, usable Direct3D 9 and permission to start owned processes/private desktops. A service, session 0, headless container or WSL terminal does not establish this support. Run native verification in the actual agent session. VMF/MCP tools work on Linux/macOS without an editor. |
 | Client and workspace | Use the installed client's supported version and an existing writable map workspace. Setup writes only the selected registration/skills and local artifacts. Client trust/approval stays client-controlled; the agent uses the installed CLI immediately when the current chat cannot reload MCP. |
 
@@ -91,7 +91,7 @@ remain inside it. Missing configuration permits offline authoring.
   configured `dist/cli.js` to its sibling wrapper when available.
   [REA installation](https://github.com/morluto/rea/blob/main/docs/installation.md).
 
-REA and CLI-Anything are development/research tools. Neither Node nor a
+REA is an optional development/research tool. Neither Node nor a
 decompiler is required for Mapwright's VMF tools, Source compilers, or MCP.
 Hermes setup can install pinned PyYAML into the local environment for its
 configuration merge; this is an installer dependency.

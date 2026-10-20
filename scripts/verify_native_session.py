@@ -12,8 +12,8 @@ import uuid
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from cli_anything.hammerplusplus import backend, desktop, native_session, windows
-from cli_anything.hammerplusplus.project import Project
+from cli.hammerplusplus import backend, desktop, native_session, windows
+from cli.hammerplusplus.project import Project
 
 
 def main():

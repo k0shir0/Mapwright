@@ -17,7 +17,7 @@ Target: KZ-first legacy CS:GO Source 1 VMF/VBSP and Hammer++.
 
 ## Code
 
-`cli_anything/hammerplusplus/`: `api.py` owns schemas/dispatch; `cli.py` and
+`cli/hammerplusplus/`: `api.py` owns schemas/dispatch; `cli.py` and
 `mcp_server.py` are transports. `vmf.py` parses/edits source spans; `project.py`
 owns workspace boundaries, revisions and map history. `kz.py` analyzes maps;
 `workspace.py` handles logs/checkpoints. `backend.py`, `catalog.py`,

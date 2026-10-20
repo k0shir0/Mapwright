@@ -10,8 +10,8 @@ import shutil
 import urllib.request
 import zipfile
 
-from cli_anything.hammerplusplus import vmf
-from cli_anything.hammerplusplus.project import Project, atomic_write, decode
+from cli.hammerplusplus import vmf
+from cli.hammerplusplus.project import Project, atomic_write, decode
 
 ARCHIVES = {
     "hammerplusplus_csgo_build8864.zip": (

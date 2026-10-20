@@ -325,7 +325,7 @@ def _start_broker(project, directory, session_id, timeout):
                 [
                     sys.executable,
                     "-m",
-                    "cli_anything.hammerplusplus.native_session",
+                    "cli.hammerplusplus.native_session",
                     "--broker",
                     str(project.root),
                     session_id,

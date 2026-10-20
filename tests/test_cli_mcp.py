@@ -8,7 +8,7 @@ import sys
 import tempfile
 import unittest
 
-from cli_anything.hammerplusplus.api import TOOLS
+from cli.hammerplusplus.api import TOOLS
 
 ROOT = Path(__file__).resolve().parents[1]
 RUNS = ROOT / ".local/test-runs"
@@ -20,9 +20,9 @@ def resolve_cli():
     executable = shutil.which(name)
     if executable:
         return [executable]
-    if os.environ.get("CLI_ANYTHING_FORCE_INSTALLED") == "1":
+    if os.environ.get("MAPWRIGHT_FORCE_INSTALLED") == "1":
         raise RuntimeError("Install the CLI and add its Scripts/bin directory to PATH")
-    return [sys.executable, "-m", "cli_anything.hammerplusplus"]
+    return [sys.executable, "-m", "cli.hammerplusplus"]
 
 
 class CLITests(unittest.TestCase):
@@ -45,7 +45,7 @@ class CLITests(unittest.TestCase):
         return json.loads(result.stdout)
 
     def test_every_command_and_flag_has_help_and_tool_coverage(self):
-        from cli_anything.hammerplusplus.cli import COMMANDS, parser
+        from cli.hammerplusplus.cli import COMMANDS, parser
 
         root = parser()
         commands = next(

@@ -111,7 +111,7 @@ class AgentSetupTests(unittest.TestCase):
                     )
 
     def test_toml_preserves_settings_other_tables_and_registration_extensions(self):
-        original = """model = "my-model" # keep
+        original = f"""model = "my-model" # keep
 [mcp_servers.other]
 command = "other.exe"
 
@@ -120,7 +120,7 @@ command = "old.exe"
 args = ["old"]
 enabled_tools = ["doctor"] # keep this
 
-[projects.'D:/another-project']
+[projects.'{(self.root / "another-project").as_posix()}']
 trust_level = "trusted"
 """
         values = setup.registration("codex", self.command, self.workspace)

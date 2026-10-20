@@ -8,10 +8,10 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from cli_anything.hammerplusplus import api, timeline, workspace
-from cli_anything.hammerplusplus.backend import BackendError
-from cli_anything.hammerplusplus.project import Project
-from cli_anything.hammerplusplus.vmf import MapError
+from cli.hammerplusplus import api, timeline, workspace
+from cli.hammerplusplus.backend import BackendError
+from cli.hammerplusplus.project import Project
+from cli.hammerplusplus.vmf import MapError
 
 ROOT = Path(__file__).resolve().parents[1]
 RUNS = ROOT / ".local/test-runs"
@@ -209,9 +209,7 @@ class TimelineTests(unittest.TestCase):
                 "destination publication failed", {"fixture": "file side effect only"}
             )
 
-        with patch(
-            "cli_anything.hammerplusplus.reference.copy_objects", side_effect=partial
-        ):
+        with patch("cli.hammerplusplus.reference.copy_objects", side_effect=partial):
             with self.assertRaisesRegex(BackendError, "publication failed") as failure:
                 api.execute(
                     self.project,
@@ -237,8 +235,8 @@ class TimelineTests(unittest.TestCase):
         before = (self.root / "a.vmf").read_bytes()
         self.child("""
 import os,sys
-from cli_anything.hammerplusplus import timeline
-from cli_anything.hammerplusplus.project import Project,atomic_write
+from cli.hammerplusplus import timeline
+from cli.hammerplusplus.project import Project,atomic_write
 p=Project(sys.argv[1])
 def crash():
     timeline.track_file(p,'a.vmf')
@@ -271,8 +269,8 @@ timeline.run(p,{},'crash_fixture',{},crash,mutating=True)
         target, head = baseline["timeline"]["action_id"], self.head()
         self.child(f"""
 import os,sys
-from cli_anything.hammerplusplus import api,timeline
-from cli_anything.hammerplusplus.project import Project
+from cli.hammerplusplus import api,timeline
+from cli.hammerplusplus.project import Project
 p=Project(sys.argv[1])
 real=timeline.restore_file
 def crash(*args,**kwargs):
