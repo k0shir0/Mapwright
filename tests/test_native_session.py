@@ -210,9 +210,9 @@ class ReaEntrypointTests(unittest.TestCase):
                 run.call_args.args[0],
                 [
                     "node",
-                    str(wrapper),
+                    str(wrapper.resolve()),
                     "inspect-pe-resources",
-                    str(hammer),
+                    str(hammer.resolve()),
                     "--format",
                     "json",
                 ],
