@@ -11,6 +11,13 @@ copy/paste steps. Use the setup script to resolve paths and preserve unrelated
 settings. The request authorizes the scoped setup; do not add a second
 confirmation merely because the script supports preview mode.
 
+Read the [machine prerequisites](../../docs/setup.md#fresh-machine-prerequisites)
+before provisioning; account for each applicable requirement. Resolve the
+checkout and writable workspace on this machine. Generated `.venv`, local
+configuration, client registration, skills, caches and receipts contain local
+paths: recreate them after moving/cloning rather than copying them. Keep these
+generated files out of Git.
+
 Resolve an existing Python 3.11+ interpreter (`python`, `py -3`, or an available
 `uv` managed Python) and verify its version. If Windows has none, provision
 per-user Python through the installed WinGet client using
@@ -21,6 +28,10 @@ the user. If policy or unavailable package infrastructure prevents provisioning,
 report that specific failure and retain the usable terminal/offline path.
 WinGet's [installation flags](https://learn.microsoft.com/en-us/windows/package-manager/winget/install)
 describe silent user-scope installation. Do not reinstall a working interpreter.
+Use 64-bit Python on Windows. On Linux/macOS, use an available `uv` managed
+Python or the system package manager to install Python, `venv` and `pip` when
+missing (some Linux distributions split them into packages). Verify
+`python -m venv` and pip work. Report policy/elevation failures specifically.
 
 1. Locate the checkout containing this skill. In an installed skill, read the
    adjacent `installation.json` for `checkout`, `workspace`, and `setup_script`.
@@ -34,14 +45,19 @@ describe silent user-scope installation. Do not reinstall a working interpreter.
    without `--yes`. Inspect its concrete paths and native-tool disposition,
    then run the same command with `--yes`. This creates/reuses the checkout
    virtual environment, installs editable Python extras, registers stdio MCP,
-   and bundles both skills with their guides. No shell activation, Node,
+   and bundles both skills with their guides. Setup repairs inherited system
+   packages and runs `pip check`; inspect failures rather than borrowing global
+   packages. No shell activation, Node,
    CLI-Anything, or REA is required for normal mapping.
 4. Read the setup receipt and `doctor` results. Native setup reuses an existing
    workspace configuration, then the checkout configuration, then detects owned
    local/Steam legacy CS:GO files. If none exists, VMF/MCP setup still completes;
    report the precise missing runtime. Use `--native required` when native
    readiness is part of the request. Resume with `--runtime PATH` after an
-   entitled installation is available; do not substitute CS2 binaries.
+   entitled installation with stock VPK content is available; this installs
+   into a fresh directory before replacing stale config, retaining its backup.
+   Do not substitute CS2 binaries. Inspect `viewport_profile_ready`: the
+   supported engine DLL profile is recorded in the native setup guide.
 5. Verify a real stdio MCP initialize, tools/list, resources/list, and one
    read-only tool call using the registered absolute executable/workspace.
    Use the current client's MCP reload if supported. If this conversation cannot
@@ -56,6 +72,11 @@ describe silent user-scope installation. Do not reinstall a working interpreter.
    without user input. Inspect the receipts and captured image. On failure,
    read the report/native logs, repair the concrete dependency or profile issue,
    and retry; path existence alone does not establish native readiness.
+   Run `scripts/verify_backend.py --workspace WORKSPACE` for a full fast
+   VBSP/VVIS/VRAD compile, then import that fresh BSP through `import-reference`
+   to verify bundled BSPSource Java when BSP copying is needed. Native checks
+   run in a logged-in Windows session with working D3D9; diagnose unavailable
+   window-station/device access explicitly. Close all task-owned native sessions.
 
 Existing trust, permissions, model settings and unrelated MCP servers remain
 client-controlled. Do not weaken them to make a smoke test pass. A working

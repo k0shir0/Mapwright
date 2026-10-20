@@ -46,6 +46,24 @@ class BackendTests(unittest.TestCase):
         current.write_text('{"game_dir":"mapwright"}')
         self.assertEqual(backend.load_config(self.project), {"game_dir": "mapwright"})
 
+    def test_doctor_diagnoses_missing_and_unsupported_renderer_profiles(self):
+        from cli_anything.hammerplusplus import render_capture
+
+        missing = backend.doctor(self.project, self.config)
+        self.assertFalse(missing["viewport_profile_ready"])
+        self.config["hammer"] = str(self.root / "hammer.exe")
+        Path(self.config["hammer"]).write_bytes(b"fixture")
+        for name in render_capture.PROFILE:
+            (self.root / name).write_bytes(b"unknown renderer")
+        report = backend.doctor(self.project, self.config)
+        self.assertFalse(report["viewport_profile_ready"])
+        self.assertTrue(
+            all(
+                row["sha256"] and not row["supported"]
+                for row in report["viewport_profile"].values()
+            )
+        )
+
     def test_zero_exit_without_fresh_bsp_fails(self):
         class Process:
             def __init__(self, *args, **kwargs):

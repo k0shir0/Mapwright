@@ -75,10 +75,17 @@ mapwright kz-test-plan maps/kz_example.vmf
 
 ## Validate changes
 
+Install development checks with `python -m pip install -e ".[mcp,source,desktop,dev]"`.
+For a new machine, use the [setup prerequisites](docs/setup.md#fresh-machine-prerequisites)
+and the setup skill; local configuration and environments are regenerated.
+
 With the virtual environment active:
 
 ```powershell
 $env:CLI_ANYTHING_FORCE_INSTALLED = '1'
+python -m pip check
+python -m compileall -q cli_anything scripts tests
+python -m black --check cli_anything scripts tests
 python -m unittest discover -s tests -v
 python scripts/demo.py
 # Configured native compilers required:

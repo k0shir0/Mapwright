@@ -24,7 +24,13 @@ import uuid
 
 CHECKOUT = Path(__file__).resolve().parents[1]
 CLIENTS = ("codex", "claude", "opencode", "antigravity", "pi", "hermes")
-GUIDES = ("kz-mapping.md", "reference-maps.md", "recovery.md")
+GUIDES = (
+    "kz-mapping.md",
+    "reference-maps.md",
+    "recovery.md",
+    "setup.md",
+    "agent-connections.md",
+)
 
 
 def sha(data):
@@ -547,15 +553,16 @@ def skill_changes(root, checkout, command, workspace):
             dest / "SKILL.md": text.encode(),
             marker: (json.dumps(metadata, indent=2) + "\n").encode(),
         }
-        if name == "mapwright":
-            files.update(
-                {
-                    dest
-                    / "references"
-                    / guide: (checkout / "docs" / guide).read_bytes()
-                    for guide in GUIDES
-                }
+        for guide in GUIDES:
+            contents = (checkout / "docs" / guide).read_text("utf-8")
+            contents = contents.replace(
+                "../skills/mapwright-setup/SKILL.md", "../../mapwright-setup/SKILL.md"
             )
+            for relative in ("../scripts/setup_local.py", "../mapwright.example.json"):
+                contents = contents.replace(
+                    relative, (checkout / relative[3:]).as_posix()
+                )
+            files[dest / "references" / guide] = contents.encode()
         for path, data in files.items():
             changes.append(Change(path, read(path), data))
     return changes
@@ -585,18 +592,27 @@ def is_native_runtime(path):
         "materialsystem.dll",
         "shaderapidx9.dll",
     )
-    return (path / "csgo/gameinfo.txt").is_file() and all(
-        (path / "bin" / name).is_file() for name in required
+    return (
+        (path / "csgo/gameinfo.txt").is_file()
+        and (path / "csgo/pak01_dir.vpk").is_file()
+        and all((path / "bin" / name).is_file() for name in required)
     )
 
 
 def runtime_candidates(checkout, environ):
-    candidates = [
-        checkout / ".local" / name
-        for name in ("csgo-sdk", "csgo-editor-complete", "csgo-editor")
-    ]
+    candidates = [checkout / ".local/csgo-sdk"]
+    # Generated editor gameinfo mounts are not recursively inherited by Source.
+    # Recover their original content runtime rather than mounting the empty shim.
+    for receipt in (checkout / ".local").glob("csgo-editor*/installation.json"):
+        try:
+            data = json.loads(receipt.read_text("utf-8"))
+            original = data.get("runtime") if isinstance(data, dict) else None
+            if isinstance(original, str):
+                candidates.append(Path(original))
+        except (ValueError, OSError):
+            continue
     steam = Path(environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)")) / "Steam"
-    libraries = [steam]
+    libraries = [steam, checkout / ".local/csgo-sdk"]
     file = steam / "steamapps/libraryfolders.vdf"
     if file.is_file():
         libraries += [
@@ -615,10 +631,24 @@ def native_plan(checkout, workspace, mode, runtime, environ):
     target = workspace / "mapwright.local.json"
     if mode == "off":
         return [], {"status": "skipped"}
-    for candidate in (
-        target,
-        workspace / "hammer-agent.local.json",
-        checkout / "mapwright.local.json",
+    if runtime:
+        runtime = runtime.expanduser().resolve()
+        if not is_native_runtime(runtime):
+            raise ValueError(
+                "Selected runtime needs legacy CS:GO bin DLLs, csgo/gameinfo.txt and csgo/pak01_dir.vpk (owned game content)"
+            )
+    if mode == "required" and os.name != "nt":
+        raise ValueError(
+            "Native Hammer++ requires Windows; use --native off for portable VMF/MCP tools"
+        )
+    stale = []
+    for candidate in dict.fromkeys(
+        (
+            target,
+            workspace / "hammer-agent.local.json",
+            checkout / "mapwright.local.json",
+            checkout / "hammer-agent.local.json",
+        )
     ):
         if candidate.is_file():
             config = json.loads(
@@ -641,19 +671,41 @@ def native_plan(checkout, workspace, mode, runtime, environ):
                 paths = value if key == "fgd" and isinstance(value, list) else [value]
                 if not paths or any(not isinstance(v, str) or not v for v in paths):
                     raise ValueError(f"Invalid native path field {key}: {candidate}")
-            if mode == "required":
-                game = (
-                    candidate.parent / Path(config.get("game_dir", "")).expanduser()
-                ).resolve()
-                tools_exist = all(
-                    key in config
-                    and (candidate.parent / Path(config[key]).expanduser()).is_file()
-                    for key in ("hammer", "vbsp", "vvis", "vrad")
+            game = (
+                candidate.parent / Path(config.get("game_dir", "")).expanduser()
+            ).resolve()
+            missing = [
+                key
+                for key in ("hammer", "vbsp", "vvis", "vrad", "bspsrc_java")
+                if key not in config
+                or not (candidate.parent / Path(config[key]).expanduser()).is_file()
+            ]
+            if not (game / "gameinfo.txt").is_file():
+                missing.append("game_dir/gameinfo.txt")
+            fgds = config.get("fgd", [])
+            fgds = [fgds] if isinstance(fgds, str) else fgds
+            if not fgds or not all(
+                (candidate.parent / Path(p).expanduser()).is_file() for p in fgds
+            ):
+                missing.append("fgd")
+            editor = candidate.parent / Path(config.get("hammer", "")).expanduser()
+            missing += [
+                name
+                for name in (
+                    "tier0.dll",
+                    "vstdlib.dll",
+                    "filesystem_stdio.dll",
+                    "materialsystem.dll",
+                    "shaderapidx9.dll",
                 )
-                if not (game / "gameinfo.txt").is_file() or not tools_exist:
-                    raise ValueError(
-                        f"Existing native configuration has missing game/tools: {candidate}"
-                    )
+                if not (editor.parent / name).is_file()
+            ]
+            if missing:
+                stale.append({"configuration": str(candidate), "missing": missing})
+                continue
+            # An explicit runtime replaces reused tools only after the new install succeeds.
+            if runtime:
+                continue
             if candidate.parent == workspace:
                 return [], {"status": "configured", "configuration": str(candidate)}
             normalized = {
@@ -668,30 +720,46 @@ def native_plan(checkout, workspace, mode, runtime, environ):
                 for k, value in config.items()
             }
             return [
-                Change(target, None, (json.dumps(normalized, indent=2) + "\n").encode())
+                Change(
+                    target,
+                    read(target),
+                    (json.dumps(normalized, indent=2) + "\n").encode(),
+                )
             ], {"status": "reuse", "configuration": str(target)}
-    if runtime and not is_native_runtime(runtime.expanduser().resolve()):
-        raise ValueError(
-            "Selected runtime is missing legacy CS:GO engine DLLs or csgo/gameinfo.txt"
-        )
     candidates = (
-        [runtime.expanduser().resolve()]
+        [runtime]
         if runtime
-        else runtime_candidates(checkout, environ)
+        else list(
+            dict.fromkeys(
+                runtime_candidates(workspace, environ)
+                + runtime_candidates(checkout, environ)
+            )
+        )
     )
     if candidates and os.name == "nt":
+        install = workspace / ".local/csgo-editor"
+        if install.exists():
+            install = install.with_name("csgo-editor-" + uuid.uuid4().hex[:12])
         return [], {
             "status": "install",
             "runtime": str(candidates[0]),
             "configuration": str(target),
+            "install_dir": str(install.relative_to(workspace)),
+            "stale_configurations": stale,
         }
     if mode == "required":
         raise ValueError(
-            "No owned legacy CS:GO runtime detected; supply --runtime or restore an entitled legacy installation"
+            "No owned legacy CS:GO runtime detected; supply --runtime or restore an entitled legacy installation. "
+            + (
+                "Missing configured prerequisites: " + json.dumps(stale)
+                if stale
+                else ""
+            )
         )
     return [], {
         "status": "offline",
         "reason": "No owned Windows legacy CS:GO runtime detected; VMF/MCP remain available",
+        "stale_configurations": stale,
     }
 
 
@@ -705,15 +773,32 @@ def bootstrap(checkout, apply=False, hermes=False):
         / ("Scripts/mapwright.exe" if os.name == "nt" else "bin/mapwright")
     )
     if apply:
+        cfg = checkout / ".venv/pyvenv.cfg"
         if not python.is_file():
             subprocess.run(
-                [sys.executable, "-m", "venv", str(checkout / ".venv")], check=True
+                [sys.executable, "-I", "-m", "venv", str(checkout / ".venv")],
+                check=True,
             )
+        elif not cfg.is_file():
+            raise ValueError(
+                "Existing .venv is invalid; preserve it elsewhere and rerun setup to recreate it"
+            )
+        else:
+            text = cfg.read_text("utf-8")
+            isolated = re.sub(
+                r"(?im)^(include-system-site-packages\s*=\s*)true\s*$",
+                r"\g<1>false",
+                text,
+            )
+            if isolated != text:
+                # The active interpreter may live here; avoid replacing Windows' locked launcher.
+                atomic(cfg, isolated.encode())
         probe = subprocess.run(
             [
                 str(python),
+                "-I",
                 "-c",
-                "import pathlib; import mcp, srctools, jsonschema; import cli_anything.hammerplusplus as package; assert pathlib.Path(package.__file__).resolve().parent == pathlib.Path("
+                "import pathlib, sys, site; assert sys.version_info >= (3, 11); assert sys.prefix != sys.base_prefix; assert not site.ENABLE_USER_SITE; import mcp, srctools, jsonschema; import cli_anything.hammerplusplus as package; assert pathlib.Path(package.__file__).resolve().parent == pathlib.Path("
                 + repr(str(checkout / "cli_anything/hammerplusplus"))
                 + "); "
                 + ("import win32api, win32job, PIL, frida; " if os.name == "nt" else "")
@@ -727,8 +812,7 @@ def bootstrap(checkout, apply=False, hermes=False):
         if (
             probe.returncode
             or not command.is_file()
-            or installed
-            and installed.get("pyproject_sha256") != fingerprint
+            or installed.get("pyproject_sha256") != fingerprint
         ):
             packages = [str(checkout) + "[mcp,source,desktop]"]
             if hermes:
@@ -736,6 +820,7 @@ def bootstrap(checkout, apply=False, hermes=False):
             subprocess.run(
                 [
                     str(python),
+                    "-I",
                     "-m",
                     "pip",
                     "install",
@@ -746,6 +831,9 @@ def bootstrap(checkout, apply=False, hermes=False):
                 check=True,
                 stdout=sys.stderr,
             )
+        subprocess.run(
+            [str(python), "-I", "-m", "pip", "check"], check=True, stdout=sys.stderr
+        )
         atomic(stamp, json.dumps({"pyproject_sha256": fingerprint}).encode())
     return python, command
 
@@ -873,6 +961,7 @@ def main(argv=None):
                 for client in clients
             ]
             python, command = bootstrap(CHECKOUT)
+            native_before = read(workspace / "mapwright.local.json")
             native_changes, native = native_plan(
                 CHECKOUT, workspace, args.native, args.runtime, environ
             )
@@ -942,11 +1031,13 @@ def main(argv=None):
             }
             if args.yes:
                 python, command = bootstrap(CHECKOUT, True, "hermes" in clients)
-                receipt = apply_changes(changes, workspace)
-                result.update(
-                    status="applied", receipt=str(receipt) if receipt else None
-                )
                 if native["status"] == "install":
+                    workspace.mkdir(parents=True, exist_ok=True)
+                    generated = (
+                        workspace
+                        / ".local/agent-setup"
+                        / (uuid.uuid4().hex + "-native.json")
+                    )
                     subprocess.run(
                         [
                             str(python),
@@ -955,12 +1046,41 @@ def main(argv=None):
                             str(workspace),
                             "--runtime",
                             native["runtime"],
+                            "--install-dir",
+                            native["install_dir"],
+                            "--output-config",
+                            str(generated.relative_to(workspace)),
                         ],
                         check=True,
                         stdout=sys.stderr,
                     )
+                    target = workspace / "mapwright.local.json"
+                    changes.append(
+                        Change(target, native_before, generated.read_bytes())
+                    )
                     result["native"]["status"] = "installed"
+                receipt = apply_changes(changes, workspace)
+                result.update(
+                    status="applied", receipt=str(receipt) if receipt else None
+                )
                 result["verification"] = verify_server(python, command, workspace)
+                if args.native == "required":
+                    doctor = result["verification"]["doctor"]["data"]
+                    missing = [
+                        key
+                        for key in (
+                            "editor_ready",
+                            "compile_ready",
+                            "fgd_ready",
+                            "decompile_ready",
+                            "viewport_profile_ready",
+                        )
+                        if not doctor.get(key)
+                    ]
+                    if missing:
+                        raise ValueError(
+                            "Native prerequisites are incomplete: " + ", ".join(missing)
+                        )
         print(json.dumps({"ok": True, "data": result}, indent=2))
         return 0
     except (
