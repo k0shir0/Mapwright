@@ -47,8 +47,7 @@ missing (some Linux distributions split them into packages). Verify
    virtual environment, installs editable Python extras, registers stdio MCP,
    and bundles both skills with their guides. Setup repairs inherited system
    packages and runs `pip check`; inspect failures rather than borrowing global
-   packages. No shell activation, Node,
-   CLI-Anything, or REA is required for normal mapping.
+   packages. No shell activation, Node, or REA is required for normal mapping.
 4. Read the setup receipt and `doctor` results. Native setup reuses an existing
    workspace configuration, then the checkout configuration, then detects owned
    local/Steam legacy CS:GO files. If none exists, VMF/MCP setup still completes;

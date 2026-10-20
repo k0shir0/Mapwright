@@ -8,8 +8,8 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from cli_anything.hammerplusplus import api, backend, catalog, vmf
-from cli_anything.hammerplusplus.project import Project, atomic_write, digest
+from cli.hammerplusplus import api, backend, catalog, vmf
+from cli.hammerplusplus.project import Project, atomic_write, digest
 
 TEST_ROOT = Path(__file__).resolve().parents[1] / ".local/test-runs"
 TEST_ROOT.mkdir(parents=True, exist_ok=True)
@@ -296,9 +296,7 @@ class ProjectTests(unittest.TestCase):
                 raise OSError("simulated publication failure")
             return real(path, data)
 
-        with patch(
-            "cli_anything.hammerplusplus.project.atomic_write", side_effect=fail_map
-        ):
+        with patch("cli.hammerplusplus.project.atomic_write", side_effect=fail_map):
             with self.assertRaises(OSError):
                 self.edit(
                     {"op": "add_entity", "classname": "light", "origin": [0, 0, 0]}

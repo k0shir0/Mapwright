@@ -44,7 +44,7 @@ def main():
             command=sys.executable,
             args=[
                 "-m",
-                "cli_anything.hammerplusplus",
+                "cli.hammerplusplus",
                 "--workspace",
                 str(workspace),
                 "mcp",
