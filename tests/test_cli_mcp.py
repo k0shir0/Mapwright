@@ -1,4 +1,6 @@
 import argparse
+from contextlib import redirect_stderr, redirect_stdout
+import io
 import json
 import os
 from pathlib import Path
@@ -7,6 +9,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from cli.hammerplusplus.api import TOOLS
 
@@ -127,6 +130,47 @@ class CLITests(unittest.TestCase):
             timeout=30,
         )
         self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_mcp_startup_failures_leave_stdout_empty(self):
+        config = self.root / "invalid.json"
+        config.write_text("{", encoding="utf-8")
+        for args in (
+            ["--workspace", str(self.root / "missing"), "mcp"],
+            ["--workspace", str(self.root), "--config", config.name, "mcp"],
+        ):
+            with self.subTest(args=args):
+                result = subprocess.run(
+                    [*resolve_cli(), *args],
+                    input='{"jsonrpc":"2.0","id":1,"method":"initialize"}\n',
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                )
+                self.assertEqual(result.returncode, 1)
+                self.assertEqual(result.stdout, "")
+                failure = json.loads(result.stderr)
+                self.assertFalse(failure["ok"])
+                self.assertTrue(failure["error"])
+
+    def test_mcp_workspace_access_denial_reports_recovery_on_stderr(self):
+        from cli.hammerplusplus.cli import main
+
+        stdout, stderr = io.StringIO(), io.StringIO()
+        with (
+            patch(
+                "cli.hammerplusplus.project.resolved_path",
+                side_effect=PermissionError(5, "Access is denied", str(self.root)),
+            ),
+            redirect_stdout(stdout),
+            redirect_stderr(stderr),
+        ):
+            status = main(["--workspace", str(self.root), "mcp"])
+        self.assertEqual(status, 1)
+        self.assertEqual(stdout.getvalue(), "")
+        failure = json.loads(stderr.getvalue())
+        self.assertFalse(failure["ok"])
+        self.assertIn("Access is denied", failure["error"])
+        self.assertIn("permissions", failure["hint"])
 
     def test_actual_mcp_sdk_stdio_session(self):
         import anyio
