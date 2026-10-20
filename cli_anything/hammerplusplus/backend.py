@@ -89,10 +89,27 @@ def doctor(project: Project, config: dict) -> dict:
         }
     game_ready = bool(game and (game / "gameinfo.txt").is_file())
     editor = configured_path(project, config, "hammer")
-    dlls = ["tier0.dll", "vstdlib.dll", "filesystem_stdio.dll"]
+    dlls = [
+        "tier0.dll",
+        "vstdlib.dll",
+        "filesystem_stdio.dll",
+        "materialsystem.dll",
+        "shaderapidx9.dll",
+    ]
     dependencies = {
         name: bool(editor and (editor.parent / name).is_file()) for name in dlls
     }
+    from .render_capture import PROFILE
+
+    renderer = {}
+    for name, expected in PROFILE.items():
+        path = editor.parent / name if editor else None
+        observed = digest(path.read_bytes()) if path and path.is_file() else None
+        renderer[name] = {
+            "expected_sha256": expected,
+            "sha256": observed,
+            "supported": observed == expected,
+        }
     candidates = []
     if os.name == "nt":
         base = (
@@ -130,13 +147,17 @@ def doctor(project: Project, config: dict) -> dict:
         "game": {"path": str(game) if game else None, "gameinfo_exists": game_ready},
         "tools": reports,
         "editor_dependencies": dependencies,
-        "editor_ready": game_ready
+        "editor_ready": os.name == "nt"
+        and game_ready
         and reports["hammer"]["exists"]
         and all(dependencies.values()),
         "compile_ready": game_ready
         and all(reports[key]["exists"] for key in ("vbsp", "vvis", "vrad")),
         "candidates": candidates,
         "decompile_ready": reports["bspsrc_java"]["exists"],
+        "viewport_profile": renderer,
+        "viewport_profile_ready": os.name == "nt"
+        and all(row["supported"] for row in renderer.values()),
         "fgds": [
             {"path": str(p), "exists": p.is_file()} for p in fgd_paths(project, config)
         ],

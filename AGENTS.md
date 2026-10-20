@@ -6,6 +6,9 @@ Target: KZ-first legacy CS:GO Source 1 VMF/VBSP and Hammer++.
 
 - Local MCP installation, client registration, or setup: read the
   [setup skill](skills/mapwright-setup/SKILL.md) and run its automatic workflow.
+  On a fresh or moved checkout, satisfy the [machine prerequisites](docs/setup.md#fresh-machine-prerequisites),
+  regenerate local paths, and verify setup in an isolated Python environment.
+  For native work, complete the skill's compile/render checks before claiming readiness.
 - Map authoring: [mapping skill](skills/mapwright/SKILL.md).
 - KZ behavior/checks: [KZ contract](docs/kz-mapping.md).
 - Backend installation/config: [setup](docs/setup.md).

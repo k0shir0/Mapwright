@@ -6,6 +6,29 @@ environment, persistent MCP registration and mapping skills. The agent runs
 Hammer++ needs compatible legacy CS:GO engine DLLs and `csgo/gameinfo.txt`;
 CS2 files cannot replace them. Use Hammer++ CS:GO build 8864.
 
+## Fresh-machine prerequisites
+
+The agent owns installation and verification using the
+[setup skill](../skills/mapwright-setup/SKILL.md). Read this checklist on a new
+machine rather than copying a previous machine's configuration or environment.
+
+| Requirement | Provisioning and verification |
+| --- | --- |
+| Checkout | Clone this repository, including `scripts/`, `skills/` and `docs/`. Git is needed to clone and develop, not to run an existing checkout. |
+| Python 3.11+ with `venv` and `pip` | The agent resolves or installs Python as directed by the setup skill. Use 64-bit Python on Windows. Setup creates an isolated `.venv`, repairs system-package inheritance and runs `pip check`. Activation and global packages are unnecessary. |
+| Python packages | Setup installs the declared `[mcp,source,desktop]` extras from `pyproject.toml`; pip installs transitive dependencies and build-time setuptools. Hermes additionally installs setup-only PyYAML. |
+| Network | First install needs the configured Python package index and, for native tools, the pinned GitHub releases/raw file in `setup_local.py`. Allow their download redirects. Preserve TLS verification; report proxy, certificate or policy failures explicitly. Cached reruns need no new downloads when dependencies are already satisfied. |
+| Legacy CS:GO runtime/content | Native authoring requires an owned, entitled Source 1 installation with `bin` engine DLLs, `csgo/gameinfo.txt`, and stock `csgo/pak01_dir.vpk` plus its VPK chunks. The agent discovers Steam libraries or accepts `--runtime`. It cannot supply Steam credentials or entitlement. Restore the entitled legacy game/SDK through Steam if absent; an SDK installation should be initialized once as directed by Hammer++'s bundled README. |
+| Native tools and assets | Setup downloads hash-verified Hammer++ 8864, Tools++, HammerAddons, GOKZ FGD and BSPSource with bundled Java. It generates editor settings, content mounts and workspace config. No separate Java, Node, REA, Ghidra, CLI-Anything or Visual Studio installation is needed for ordinary mapping. |
+| Windows graphics session | Native editing needs a logged-in Windows desktop session with access to `WinSta0`, usable Direct3D 9 and permission to start owned processes/private desktops. A service, session 0, headless container or WSL terminal does not establish this support. Run native verification in the actual agent session. VMF/MCP tools work on Linux/macOS without an editor. |
+| Client and workspace | Use the installed client's supported version and an existing writable map workspace. Setup writes only the selected registration/skills and local artifacts. Client trust/approval stays client-controlled; the agent uses the installed CLI immediately when the current chat cannot reload MCP. |
+
+Python installation, package installation and native-tool downloads are agent
+tasks. User action is needed only for unavailable credentials/entitlement,
+OS elevation or installation policy, client trust, or access to a suitable
+Windows graphics session. Report the exact blocker and working capabilities;
+offline setup is not a claim of native readiness.
+
 Setup first reuses the workspace's `mapwright.local.json` (or the legacy
 `hammer-agent.local.json`), then the checkout configuration with relative paths
 resolved. Otherwise it searches known local installs and Steam libraries for
@@ -14,6 +37,15 @@ skips this; `--native required` reports a missing runtime as a failure. Without
 one, automatic mode still installs offline VMF tools and MCP. It does not
 acquire Steam entitlement or substitute another engine branch.
 
+Setup reports stale configurations and repairs them when an owned runtime is
+available. An explicit `--runtime` requests a new isolated native installation.
+Configuration is replaced, with a rollback backup, only after installation
+succeeds. A partial previous installation is retained; retries choose a fresh
+directory and reuse verified downloads. Malformed configuration is reported
+instead of overwritten: preserve a backup, correct the reported fields, and
+rerun setup. Rollback restores registration, skills and configuration; it
+retains downloaded tools and maps.
+
 ## Isolated installation
 
 Automatic setup invokes this after runtime discovery. For an owned runtime in
@@ -21,15 +53,19 @@ another location, the agent can pass `--runtime` to `setup_agent.py`. The
 underlying installer also works directly:
 
 ```powershell
-python scripts/setup_local.py --runtime 'C:/path/to/legacy-csgo'
+python scripts/setup_local.py --runtime $runtime
 mapwright doctor
 python scripts/verify_backend.py
 ```
 
+Here `$runtime` is the absolute owned runtime discovered by the agent.
 The installer creates workspace-local editor/configuration files and mounts
 existing game content. It refuses existing install/config targets. Use
 `--help` for alternate locations. Downloads and hashes are pinned in
 [setup_local.py](../scripts/setup_local.py).
+
+Prefer `setup_agent.py` for retries and configuration repair. Direct
+`setup_local.py` calls require an unused `--install-dir` and `--output-config`.
 
 It includes Hammer++, Tools++ compilers, BSPSource with Java, HammerAddons
 editor definitions/assets, and GOKZ fields merged into `csgo_kz.fgd`.
@@ -40,8 +76,8 @@ FGD presence alone does not establish engine support.
 
 Automatic setup reuses an existing working configuration. For custom tools,
 [mapwright.example.json](../mapwright.example.json) describes supported fields;
-the agent resolves actual paths and creates the workspace configuration without
-overwriting an existing file.
+the agent resolves actual paths and preserves a valid existing workspace
+configuration. Repair of stale paths follows the backed-up workflow above.
 Configuration paths resolve against that workspace; the config file must
 remain inside it. Missing configuration permits offline authoring.
 
@@ -59,6 +95,20 @@ REA and CLI-Anything are development/research tools. Neither Node nor a
 decompiler is required for Mapwright's VMF tools, Source compilers, or MCP.
 Hermes setup can install pinned PyYAML into the local environment for its
 configuration merge; this is an installer dependency.
+
+### Optional REA research lane
+
+`rea-probe` and the opt-in `test_mcp_e2e.py` native research scenario additionally
+need REA. The agent provisions this only when that lane is requested: install
+a Node version accepted by the pinned REA package's `engines.node`, resolve
+`rea-agents@6.7.0` into `.local/rea-runtime` with `npm install --package-lock-only
+--ignore-scripts --prefix .local/rea-runtime rea-agents@6.7.0`, run
+`npm audit --prefix .local/rea-runtime`, review the result, then install with
+`npm ci --prefix .local/rea-runtime`. Configure `rea` to the resolved
+`.local/rea-runtime/node_modules/rea-agents/scripts/rea.mjs` and verify
+`rea-probe hammer`. Ghidra is unnecessary for this PE resource probe.
+Use the linked upstream REA installation guide for additional reverse
+engineering features; these are separate from mapping setup.
 
 Set the editor's GameData to the complete merged FGD when using the installer.
 `doctor` checks prerequisites. Confirm native behavior with a fresh compile,
@@ -87,6 +137,15 @@ tries viewport readback and reports any UI-only fallback as
 `viewport_capture_error`. GPU capture checks the loaded x86 material-system and
 shader DLL hashes against an observed ABI profile before making interface
 calls. Unknown profiles are refused; do not guess offsets for other SDK builds.
+
+The verified profile is Steam `csgo_legacy` build `12426195`, patch `1.38.8.1`,
+Source revision `8413246` (October 12, 2023). Exact renderer hashes live in
+`render_capture.PROFILE`; `doctor` reports observed/expected hashes and
+`viewport_profile_ready`. Hammer++ 8864 alone does not pin the engine DLLs.
+`--native required` checks this profile as well as editor, compiler, FGD and
+decompiler paths. It still needs a real render/compile verification in the
+current Windows session. A new engine profile requires a separately verified
+ABI before adding support; retain the working VMF/compiler path meanwhile.
 Uniform actual pixels are retained with a warning, since an empty/off-map
 camera can produce an empty view. Inspect the image before claiming geometry.
 Capture skips cleared helper panes, with a limit of eight owned frame events
