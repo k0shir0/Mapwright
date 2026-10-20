@@ -18,7 +18,7 @@ class PortabilityTests(unittest.TestCase):
                 "mapwright.example.json",
             )
         ]
-        for folder in ("cli_anything", "scripts", "docs", "skills", ".github"):
+        for folder in ("cli", "scripts", "docs", "skills", "tests", ".github"):
             paths.extend(
                 p
                 for p in (ROOT / folder).rglob("*")

@@ -7,8 +7,8 @@ import unittest
 from unittest.mock import patch
 import zipfile
 
-from cli_anything.hammerplusplus import api, reference, vmf
-from cli_anything.hammerplusplus.project import Project, digest
+from cli.hammerplusplus import api, reference, vmf
+from cli.hammerplusplus.project import Project, digest
 
 RUNS = Path(__file__).resolve().parents[1] / ".local/test-runs"
 RUNS.mkdir(parents=True, exist_ok=True)
@@ -350,7 +350,7 @@ class ReferenceTests(unittest.TestCase):
                 self.assertEqual(properties["sides2"], str(newface))
 
     def test_native_failure_uses_structured_backend_error(self):
-        from cli_anything.hammerplusplus import desktop, backend
+        from cli.hammerplusplus import desktop, backend
 
         with patch.object(
             desktop, "inspect_editor", side_effect=RuntimeError("stale handle")

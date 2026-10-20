@@ -6,8 +6,8 @@ from pathlib import Path
 import sys
 import uuid
 
-from cli_anything.hammerplusplus.backend import BackendError, compile_map, load_config
-from cli_anything.hammerplusplus.project import Project
+from cli.hammerplusplus.backend import BackendError, compile_map, load_config
+from cli.hammerplusplus.project import Project
 
 
 def main():

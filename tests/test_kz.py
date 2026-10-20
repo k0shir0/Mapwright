@@ -2,9 +2,9 @@ import tempfile
 from pathlib import Path
 import unittest
 
-from cli_anything.hammerplusplus import kz, vmf
-from cli_anything.hammerplusplus.api import execute
-from cli_anything.hammerplusplus.project import Project
+from cli.hammerplusplus import kz, vmf
+from cli.hammerplusplus.api import execute
+from cli.hammerplusplus.project import Project
 
 RUNS = Path(__file__).resolve().parents[1] / ".local/test-runs"
 RUNS.mkdir(parents=True, exist_ok=True)

@@ -29,7 +29,7 @@ def main():
     async def scenario():
         params = StdioServerParameters(
             command=sys.executable,
-            args=["-m", "cli_anything.hammerplusplus", "--workspace", str(root), "mcp"],
+            args=["-m", "cli.hammerplusplus", "--workspace", str(root), "mcp"],
         )
         async with stdio_client(params) as (read, write):
             async with ClientSession(read, write) as client:

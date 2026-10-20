@@ -6,9 +6,9 @@ import tempfile
 import unittest
 from unittest.mock import MagicMock, patch
 
-from cli_anything.hammerplusplus import render_capture
-from cli_anything.hammerplusplus.backend import BackendError
-from cli_anything.hammerplusplus.project import Project
+from cli.hammerplusplus import render_capture
+from cli.hammerplusplus.backend import BackendError
+from cli.hammerplusplus.project import Project
 
 
 class RenderCaptureTests(unittest.TestCase):
@@ -53,7 +53,7 @@ class RenderCaptureTests(unittest.TestCase):
             output = Path(root) / "capture.png"
             output.write_bytes(b"user-owned existing image")
             with (
-                patch("cli_anything.hammerplusplus.desktop._assert_owned"),
+                patch("cli.hammerplusplus.desktop._assert_owned"),
                 patch.object(render_capture.subprocess, "run") as run,
             ):
                 with self.assertRaisesRegex(BackendError, "new PNG"):

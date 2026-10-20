@@ -27,7 +27,7 @@ environment profile overrides. `--workspace` selects the map workspace and
 project configuration root. `--help` describes every flag.
 
 Setup writes the absolute installed executable and workspace. Transport is
-local stdio; no account, hosted endpoint, Node, REA, or CLI-Anything is required
+local stdio; no account, hosted endpoint, Node, or REA is required
 by Mapwright at runtime. See [native setup](setup.md) for the separate owned
 legacy CS:GO requirement.
 
