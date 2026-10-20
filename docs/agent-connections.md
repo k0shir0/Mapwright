@@ -59,6 +59,11 @@ workspace and checkout. The mapping skill bundles its KZ, reference copying
 and recovery guides, so relative links resolve outside this repository.
 Rerunning setup is idempotent and updates managed files.
 
+Recreate the environment and rerun setup after cloning or relocating a checkout.
+Executable paths, configuration, installed skills and receipts describe one
+machine; generated project files are ignored by Git. The complete dependency
+and native-session checklist is in [fresh-machine prerequisites](setup.md#fresh-machine-prerequisites).
+
 Each changed file has a backup and digest in the receipt under
 `.local/agent-setup/`. The agent can restore the exact returned receipt with
 `python scripts/setup_agent.py --rollback RECEIPT_PATH --yes`. Rollback refuses
