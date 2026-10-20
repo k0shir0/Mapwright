@@ -849,7 +849,31 @@ def _broker(project, session_id):
                     elif command == "capture":
                         from .windows import _capture_editor
 
-                        data = _capture_editor(project, config, pid, **arguments)
+                        method = arguments.get("method", "auto")
+                        if method == "window":
+                            data = _capture_editor(project, config, pid, **arguments)
+                        else:
+                            from .render_capture import capture
+
+                            try:
+                                data = capture(
+                                    project,
+                                    config,
+                                    pid,
+                                    arguments["output"],
+                                    session_id,
+                                )
+                            except BackendError as exc:
+                                if method == "viewport":
+                                    raise
+                                data = _capture_editor(
+                                    project,
+                                    config,
+                                    pid,
+                                    output=arguments["output"],
+                                    method="window",
+                                )
+                                data["viewport_capture_error"] = str(exc)
                     elif command in ("save", "checkpoint"):
                         data = _save_staged(
                             project,

@@ -253,11 +253,11 @@ class Timeline:
                 payload = json.loads(row["payload"])
                 payload["event_sequence"] = row["sequence"]
                 raw = (json.dumps(payload, ensure_ascii=True, indent=2) + "\n").encode()
-                if path.exists():
+                try:
+                    atomic_write(path, raw, exclusive=True)
+                except FileExistsError:
                     if path.read_bytes() != raw:
                         raise MapError("Immutable timeline event checksum mismatch")
-                else:
-                    atomic_write(path, raw, exclusive=True)
                 with self.connect() as db:
                     db.execute(
                         "UPDATE events SET exported=1 WHERE sequence=?",
@@ -561,6 +561,24 @@ class Action:
                 "warnings",
                 "artifacts",
                 "native_reload",
+                "session_id",
+                "staged_map",
+                "runtime",
+                "idle_cpu_policy",
+                "cleanup_complete",
+                "job_active_processes",
+                "graceful",
+                "method",
+                "width",
+                "height",
+                "backbuffer_width",
+                "backbuffer_height",
+                "capture_worker_pid",
+                "capture_worker_exited",
+                "viewport_capture_error",
+                "content_has_variation",
+                "frames_examined",
+                "capture_worker_peak_working_set_bytes",
             )
             if key in result
         }

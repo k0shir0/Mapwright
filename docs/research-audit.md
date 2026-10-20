@@ -43,9 +43,9 @@ all private interfaces have been ruled out.
 The private-desktop experiment loaded a real VMF, inspected the actual editor,
 handled its recovery dialog, captured its window and shut it down. The input
 desktop and sampled foreground window stayed unchanged, and the owned job
-reported zero active processes after cleanup. PrintWindow captures omitted
-GPU viewport content in this experiment. Render readback needs its own
-verification; UI chrome is not rendering evidence. Windows provides
+reported zero active processes after cleanup. PrintWindow omitted GPU viewport
+content; a separate render-thread readback now returns actual native pixels.
+UI chrome alone is not rendering evidence. Windows provides
 [desktop selection at process creation](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/ns-processthreadsapi-startupinfow),
 while actual D3D9 readback has [separate surface constraints](https://learn.microsoft.com/en-us/windows/win32/api/d3d9/nf-d3d9-idirect3ddevice9-getrendertargetdata).
 
@@ -57,16 +57,20 @@ activity and is not an always-running Mapwright service.
 
 ## Verification on 2026-10-19
 
-On Windows with Python 3.11, the installed-command suite passed 114 tests with
+On Windows with Python 3.11, the installed-command suite passed 120 tests with
 the native MCP lane enabled. The 57 advertised tools have explicit portable
 success scenarios or a real native scenario; fixture-only native transport
 checks remain labelled separately. The real native lane compiled a fresh BSP,
-ran REA, inspected and controlled Hammer++, captured its owned window, saved
+ran REA, inspected and controlled Hammer++, captured real viewport pixels and
+its owned UI window, saved
 with revision checks, rejected a stale save, restored an action's exact source
 bytes, reopened the hidden document and closed its owned process tree.
 Process-crash tests exercise interrupted mutation, partial checkout and abrupt
 MCP host death. The broker observed the dead host without polling, closed the
 hidden editor and recorded zero active processes in its owned job.
+An actual stdio session also completed 24 parallel metadata requests with
+unique action receipts and no pending actions. Windows extended path prefixes
+are normalized after junction resolution; outside-workspace paths stay refused.
 
 Setup was applied for all six clients in a disposable user profile with a map
 workspace containing spaces. The registered executable completed an actual MCP
@@ -75,17 +79,30 @@ The receipt then rolled back those files. This verifies configuration generation
 and server connectivity; it does not establish that all six client applications
 loaded this development checkout in live conversations.
 
-A three-second idle sample of the capped native session measured about 0.52%
-of one CPU for Hammer++, with roughly 271 MiB working set; its waiting broker
-used about 26 MiB and no sampled CPU. These are observations on this machine,
+A three-second idle sample after GPU capture measured about 0.52% of one CPU
+for Hammer++, with roughly 275 MiB working set; its waiting broker used about
+26 MiB and no sampled CPU. The disposable capture worker peaked near 116 MiB
+and exited before returning its receipt. These are observations on this machine,
 not minimum requirements or universal performance promises. Cleanup reported
 zero active processes in the owned job, with the sampled input desktop,
 foreground window and cursor unchanged.
 
-REA/Frida also observed the installed material-system factory and an actual
-render callback. A bounded readback experiment using the public
+REA/Frida observed the material-system factory and native render callbacks.
+The public
 [CS:GO SDK interface](https://github.com/alliedmodders/hl2sdk/blob/csgo/public/materialsystem/imaterialsystem.h)
-returned dimensions but failed while reading pixels. No experimental method
-offsets or instrumentation dependency were added to the runtime. GPU viewport
-capture remains unresolved; the working PrintWindow path captures native UI
-and explicitly reports that limitation. These tests do not establish gameplay.
+was insufficient to assume the installed ABI: binary inspection showed a
+seventh optional texture argument on ReadPixels. Passing it explicitly enabled
+real GPU readback on the normal Windows D3D9 backend. A D3D9-to-Vulkan experiment
+also ran in an isolated runtime, but no graphics wrapper is needed or installed
+by Mapwright.
+
+Hammer's 2D helper panes can swap cleared buffers before the populated camera
+pane. The capture worker examines at most eight owned frame events, reuses its
+RGB buffer, selects a populated pane and detaches. Loaded DLL hashes and x86
+architecture must match the verified profile before native interface calls.
+Unknown profiles are refused; `auto` reports any UI-only fallback explicitly.
+Uniform actual frames remain available with warnings. The real native test
+requires visible image variation for its generated room, checks all three
+capture modes, and preserves the PNG for content review. The resulting image
+was inspected and showed the room, player models and KZ brush geometry.
+These tests do not establish gameplay.

@@ -36,6 +36,8 @@ native command labels. Source replacements and larger requests link an immutable
 Source bodies are hashed in receipts; exact saved bytes reside in the
 content-addressed checkpoint blob store. Audit/snapshot persistence must succeed
 before a managed mutation proceeds.
+Native receipts also retain capture mode, fallback warnings, worker/resource
+metadata, session IDs and owned-job cleanup results.
 
 Automatic tracking covers affected VMFs and their active journals, VMF imports,
 deletion/restoration, checkpoint restore scopes, capture output files, and local

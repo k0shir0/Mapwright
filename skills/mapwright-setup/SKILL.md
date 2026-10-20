@@ -44,9 +44,18 @@ describe silent user-scope installation. Do not reinstall a working interpreter.
    entitled installation is available; do not substitute CS2 binaries.
 5. Verify a real stdio MCP initialize, tools/list, resources/list, and one
    read-only tool call using the registered absolute executable/workspace.
-   Use the current client's MCP reload if supported. Otherwise state that a
-   new client session is needed and preserve the completed persistent setup.
+   Use the current client's MCP reload if supported. If this conversation cannot
+   reload servers, continue immediately through the installed CLI; the persistent
+   registration loads in future client sessions. Do not hand the reload limit
+   back to the user as a required setup task.
    Confirm mapping skills are discoverable and every bundled guide resolves.
+6. When native readiness is requested and the runtime is present, run the
+   checkout's `scripts/verify_native_session.py --run --workspace WORKSPACE`
+   and `scripts/verify_kz.py --workspace WORKSPACE` using its virtual environment.
+   These exercise a private desktop, actual GPU capture, cleanup and compilation
+   without user input. Inspect the receipts and captured image. On failure,
+   read the report/native logs, repair the concrete dependency or profile issue,
+   and retry; path existence alone does not establish native readiness.
 
 Existing trust, permissions, model settings and unrelated MCP servers remain
 client-controlled. Do not weaken them to make a smoke test pass. A working

@@ -109,6 +109,9 @@ Applied setup runs the registered executable through MCP initialize,
 tools/list, resources/list, prompts/list and a read-only `doctor` call.
 The agent separately checks whether its current client session loaded that
 registration and skills; an existing conversation may need a new session.
+When the conversation cannot reload MCP, the agent continues through the
+installed CLI immediately. Persistent registration serves future sessions;
+the user does not need to restart the client to finish the mapping task.
 
 Use tools/list for schemas, `kz_mapping_workflow` for the mapping prompt, and
 `hammer://guide/kz` for guidance. Long builds need client timeouts above the
