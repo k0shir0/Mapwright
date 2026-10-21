@@ -111,9 +111,41 @@ Use the linked upstream REA installation guide for additional reverse
 engineering features; these are separate from mapping setup.
 
 Set the editor's GameData to the complete merged FGD when using the installer.
-`doctor` checks prerequisites. Confirm native behavior with a fresh compile,
-editor state/capture and in-game testing. Builds stay in `.hammer-agent/builds/`;
+`doctor` checks prerequisites. Confirm native behavior with a fresh compile
+and editor state/capture; use the [requested verification scope](kz-mapping.md#verification-scope)
+for game checks. Builds stay in `.hammer-agent/builds/`;
 Mapwright does not install them into the game or publish to Workshop.
+
+## Runtime test troubleshooting
+
+Read the existing launcher/shortcut and game configuration before requesting
+server details already present locally. Identify the actual legacy client,
+server executable, `-game` directory, search paths, tick rate and installed
+SourceMod/GOKZ plugins. A tool schema from another checkout or an editor mount
+does not describe the running game. Keep test configs, databases, replay fixtures
+and harnesses in an isolated workspace; retain existing server versions for
+acceptance evidence.
+
+For an isolated legacy overlay, account for resources resolved through both
+`GAME` and `MOD`. One observed overlay required separate search-path entries
+`Game "<base>/csgo"` and `MOD "<base>/csgo"`; a `GAME` fallback alone failed
+during player entry. Verify a known working control map before attributing such
+a crash to the candidate. SourceMod raw file access may also require maps/NAVs
+inside the overlay itself. A client version-string edit does not prove binary
+compatibility or fix a crash.
+
+If a client reports `Failed to connect with local Steam Client process`, check
+whether Steam is signed in and whether the same legacy executable launches
+normally. Use the user's existing Steam session; credentials remain with the
+user. Confirm the launched executable: an app launch request can select CS2
+despite an intended legacy test. For connection timeouts, inspect the actual
+bound address/port and test the configured LAN endpoint before changing network
+settings.
+
+Bound test sessions, retain console/capture evidence, and close their owned
+processes when the requested checks finish. Preserve the user's Steam/editor
+sessions. Keep failed probes and inconclusive results in the
+[problem log](recovery.md#problem-log), separate from successful acceptance.
 
 ## Terminal-controlled editor sessions
 

@@ -64,6 +64,8 @@ missing (some Linux distributions split them into packages). Verify
    registration loads in future client sessions. Do not hand the reload limit
    back to the user as a required setup task.
    Confirm mapping skills are discoverable and every bundled guide resolves.
+   When refreshing skills, verify the installed copies as well as the checkout;
+   read their installation markers to identify the executable actually used.
 6. When native readiness is requested and the runtime is present, run the
    checkout's `scripts/verify_native_session.py --run --workspace WORKSPACE`
    and `scripts/verify_kz.py --workspace WORKSPACE` using its virtual environment.
@@ -76,6 +78,12 @@ missing (some Linux distributions split them into packages). Verify
    to verify bundled BSPSource Java when BSP copying is needed. Native checks
    run in a logged-in Windows session with working D3D9; diagnose unavailable
    window-station/device access explicitly. Close all task-owned native sessions.
+
+For a separate game client/server check, read the
+[runtime troubleshooting](../../docs/setup.md#runtime-test-troubleshooting) guide.
+Editor setup does not install custom assets or GOKZ into the user's game.
+Keep native failures in the local [problem log](../../docs/recovery.md#problem-log)
+with their logs, observed environment and verification limits.
 
 Existing trust, permissions, model settings and unrelated MCP servers remain
 client-controlled. Do not weaken them to make a smoke test pass. A working

@@ -102,7 +102,8 @@ python scripts/verify_native_session.py --run
 
 CI checks and formatter version: [.github/workflows/checks.yml](.github/workflows/checks.yml).
 Structural checks and compilation do not prove rendering or playability.
-Inspect editor captures and test the compiled map on the intended KZ server.
+Follow the [verification scope](docs/kz-mapping.md#verification-scope) for map
+delivery; geometry and appearance checks do not require a full-course playthrough.
 The portable MCP suite exercises every advertised tool, with explicit native
 contract fixtures and missing-prerequisite errors. The opt-in native lane uses
 the actual configured compiler, REA and private-desktop Hammer++ process,
