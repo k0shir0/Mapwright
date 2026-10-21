@@ -445,10 +445,7 @@ class Project:
                 raise vmf.MapError(
                     "Revision conflict; inspect the map again before editing"
                 )
-            results = []
-            for operation in operations:
-                text, result = vmf.mutate(text, operation)
-                results.append(result)
+            text, results = vmf.mutate_many(text, operations)
             validation = vmf.validate(text)
             if not validation["valid"]:
                 raise vmf.MapError(

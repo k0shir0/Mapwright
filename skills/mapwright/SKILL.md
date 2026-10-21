@@ -17,6 +17,14 @@ If installation or MCP is missing, follow the repository's `mapwright-setup`
 skill or run `python scripts/setup_agent.py --help` from the checkout. Setup
 installs this skill with the linked guides bundled alongside it.
 
+Establish the requested timer style, movement mode, player/replay capacity and
+verification scope from the brief and existing configuration. For a geometry
+and appearance task, finish with geometry checks, verified packaging and one
+successful in-game render check; expand testing only for a demonstrated defect
+or a broader acceptance request. Read the [verification scope](../../docs/kz-mapping.md#verification-scope)
+before native testing. Verify the running CLI/MCP schema: edits in another
+worktree do not update the executable or an already-running MCP server.
+
 1. Inspect the map revision and typed IDs. Use `object` for properties, outputs,
    side IDs and source; qualify reused IDs with `kind`. For a new KZ map, use
    `new PATH --template kz-room`.
@@ -36,7 +44,9 @@ installs this skill with the linked guides bundled alongside it.
    visual evidence, then copy typed IDs with both revisions. Inspect mappings,
    dependencies and mounts; see [reference copying](../../docs/reference-maps.md).
 6. Run `validate`, `kz-audit`, focused KZ checks and `kz-test-plan`. Read findings
-   and unsupported geometry even when the call succeeds.
+   and unsupported geometry even when the call succeeds. Check hull clearance
+   and floor support at actual spawns, landing seams, turns and recovery points;
+   box-only findings leave other collision unverified.
 7. Run `doctor` before native work. Compile a fresh BSP and inspect stage logs.
    For GUI work, inspect the selected process/document, handle modal dialogs,
    and choose an enabled native action by its inspected identity. Actions report
@@ -48,7 +58,19 @@ installs this skill with the linked guides bundled alongside it.
    explicitly. Read uniform-frame warnings; inspect the image and camera/map
    state before claiming visible geometry. Native actions checkpoint staged documents
    where supported; inspect `checkpointed` and `document_reversible`.
-8. Test the compiled BSP on the intended server/mode before claiming playability.
+8. Compile with dependency packing enabled, inspect missing-file/packing
+   results, then use `package_map` to verify the same-named BSP/NAV archive.
+   Confirm custom materials and all sky dependencies are embedded: editor
+   mounts do not travel with the BSP. Empty NAVs prove file presence only.
+   For physical timers, audit with `timer_profile=buttons`; set spawn capacity
+   for the server profile. Follow the requested [runtime checks](../../docs/kz-mapping.md#verification-scope)
+   and identify the exact tested build. Keep rendering, geometry, gameplay and
+   replay results separate; report limits and stop when the agreed checks pass.
+
+When a failure changes the result or blocks a check, keep a local
+[problem log](../../docs/recovery.md#problem-log) as it happens. Preserve the
+failing artifact and record reproduction, observed error, fix/workaround and
+verification limits before calling the problem resolved.
 
 Transport results are `{ok:true,data:...}` or `{ok:false,error:...,details?:...}`.
 Completed checks can return findings despite success: inspect `valid`, `complete`,

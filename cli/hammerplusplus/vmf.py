@@ -316,7 +316,9 @@ def make_box(
     return block("solid", {"id": start_id}, children), start_id
 
 
-def mutate(text: str, operation: dict) -> tuple[str, dict]:
+def mutate(
+    text: str, operation: dict, *, _root: Node | None = None
+) -> tuple[str, dict]:
     if not isinstance(operation, dict):
         raise MapError("Each operation must be an object")
     if operation.get("op") == "replace_source":
@@ -325,7 +327,7 @@ def mutate(text: str, operation: dict) -> tuple[str, dict]:
         ):
             raise MapError("replace_source requires a VMF source string")
         return operation["source"], {"op": "replace_source"}
-    root = parse(text)
+    root = _root if _root is not None else parse(text)
     op = operation.get("op")
     fields = {
         "add_box": (
@@ -349,7 +351,7 @@ def mutate(text: str, operation: dict) -> tuple[str, dict]:
         raise MapError(
             f"{op}: required fields {sorted(required)}, optional fields {sorted(optional)}"
         )
-    oid = next_id(root)
+    oid = next_id(root) if op in ("add_box", "add_room", "add_entity") else 0
     worlds = root.blocks("world")
     if len(worlds) != 1:
         raise MapError("VMF must have exactly one world")
@@ -561,6 +563,38 @@ def mutate(text: str, operation: dict) -> tuple[str, dict]:
     if not changes:
         raise MapError("Object has no translatable geometry or origin")
     return replace(text, changes), {"op": op, "ids": [operation["id"]]}
+
+
+def mutate_many(text: str, operations: list[dict]) -> tuple[str, list[dict]]:
+    # Independent translations keep their original source spans. Overlapping or
+    # mixed edits retain sequential semantics, including ID allocation.
+    if len(operations) > 1 and all(
+        isinstance(op, dict) and op.get("op") == "translate" for op in operations
+    ):
+        root = parse(text)
+        nodes = [
+            find_id(root, op.get("id"), op.get("kind"), allowed=("solid", "entity"))
+            for op in operations
+        ]
+        ordered = sorted(nodes, key=lambda n: n.start)
+        if all(a.end <= b.start for a, b in zip(ordered, ordered[1:])):
+            changes, results = [], []
+            for node, op in zip(nodes, operations):
+                updated, result = mutate(text, op, _root=root)
+                changes.append(
+                    (
+                        node.start,
+                        node.end,
+                        updated[node.start : node.end + len(updated) - len(text)],
+                    )
+                )
+                results.append(result)
+            return replace(text, changes), results
+    results = []
+    for operation in operations:
+        text, result = mutate(text, operation)
+        results.append(result)
+    return text, results
 
 
 def inspect(text: str, offset: int = 0, limit: int = 100) -> dict:
