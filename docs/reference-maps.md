@@ -10,7 +10,9 @@ Input: source BSP/VMF, destination VMF, requested objects and placement.
 3. Inspect the destination. Call `copy-reference-objects @request.json` with
    both revisions and typed IDs; preview with `dry_run:true`.
 4. Review copied IDs, targetname mappings, external references and asset mounts.
-   Validate/audit, compile, inspect the editor, then test the intended server.
+   Validate/audit, compile with dependency packing, and verify the delivery
+   archive. Use the [requested verification scope](kz-mapping.md#verification-scope)
+   for rendering and server checks.
 
 Request shape; replace hashes and selection with inspected values:
 
@@ -43,6 +45,9 @@ mounted in an isolated directory; include transitive VMT/VTF and sky dependencie
 An empty list copies geometry without assets. Omitting it retains the full-import
 mount and its conflict checks. Compilation checks and packs discovered runtime
 dependencies separately; an editor mount is not a game installation.
+Inspect the fresh BSP's embedded inventory before delivery, including detail
+textures, VMT patches and all referenced sky faces. Keep source asset bytes and
+credits; delivery readiness does not establish redistribution permission.
 
 BSP decompilation cannot recover every original entity, instance, asset or
 authoring detail. Keep provenance; inspect dependencies rather than guessing.

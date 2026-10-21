@@ -2,6 +2,27 @@
 
 State lives in the workspace's ignored `.hammer-agent/` directory.
 
+## Problem log
+
+When a mapping, tool or runtime failure affects delivery or prevents a check,
+record it while investigating in an ignored `.local/<task>/problems.md` (or the
+task's existing research log). Link it from the completion report. Preserve the
+original failing artifact/hash and existing research; add resolutions without
+rewriting historical observations as if they had already passed.
+
+Each distinct issue needs:
+
+- Preconditions: map/build hashes, executable/plugin versions and relevant setup.
+- Reproduction: exact tool arguments or minimal steps, with secrets redacted.
+- Observation: exact error or measured behavior, expected result, action ID/log/capture.
+- Diagnosis: confirmed facts separated from hypotheses and unrelated environment failures.
+- Resolution: fix or workaround, changed files and any remaining side effects.
+- Verification: the check actually run, artifact identity, outcome and remaining limits.
+
+Mark attempted-only, inconclusive and unverified checks explicitly. Tool action
+history supplies evidence; it does not replace this explanation. For delivery
+claims, use the [verification scope](kz-mapping.md#verification-scope).
+
 ## Permanent action timeline
 
 Every shared CLI/MCP tool request receives an action ID before execution,
