@@ -21,8 +21,11 @@ game's `maps` directory. Nonempty source/compiler NAVs are preserved but marked
 
 Compilation embeds discovered material/sky/prop dependencies using the `source`
 extra, including files in custom editor mounts. Missing dependencies fail with
-their game-relative paths. Engine shaders and dynamic/plugin resources still
-need runtime verification. `--no-pack-assets` produces a development build;
+their game-relative paths. Packing verifies dependency hashes and rejects omitted
+or changed assets before replacing the BSP. Only known GOKZ scalar-key warnings
+are ignored; other dependency-analysis warnings fail delivery. Engine shaders
+and dynamic/plugin resources still need runtime verification.
+`--no-pack-assets` produces a development build;
 `package_map` refuses builds without verified assets.
 
 The compiler and editor can resolve a workspace import mount that the actual
