@@ -16,10 +16,19 @@ RUNS = Path(__file__).resolve().parents[1] / ".local/test-runs"
 RUNS.mkdir(parents=True, exist_ok=True)
 
 
-def material_bsp(path, material="custom/floor", sky="customsky"):
+def material_bsp(path, material="custom/floor", sky="customsky", entity_fields=None):
     """Minimal real BSP container for the dependency reader, not a playable map."""
+    entity = (
+        "{\n"
+        + "".join(f'"{key}" "{value}"\n' for key, value in entity_fields.items())
+        + "}\n"
+        if entity_fields
+        else ""
+    )
     lumps = {
-        0: ('{\n"classname" "worldspawn"\n"skyname" "' + sky + '"\n}\n\0').encode(),
+        0: (
+            '{\n"classname" "worldspawn"\n"skyname" "' + sky + '"\n}\n' + entity + "\0"
+        ).encode(),
         1: bytes(20),
         5: bytes(32),
         35: bytes(4),
@@ -173,6 +182,12 @@ class ResearchRegressions(unittest.TestCase):
         self.assertTrue(result["assets"]["complete"], result)
         self.assertFalse(result["verification"]["gameplay_verified"])
         raw = Path(result["bsp"]["path"]).read_bytes()
+        original = self.root / "original.bsp"
+        material_bsp(original)
+        before = original.read_bytes()
+        pak_header = 8 + 40 * 16
+        self.assertEqual(raw[:pak_header], before[:pak_header])
+        self.assertEqual(raw[pak_header + 16 : len(before)], before[pak_header + 16 :])
         offset, size = struct.unpack_from("<ii", raw, 8 + 40 * 16)
         with zipfile.ZipFile(io.BytesIO(raw[offset : offset + size])) as pak:
             self.assertEqual(pak.read("materials/custom/detail.vtf"), b"detail fixture")
@@ -219,6 +234,62 @@ class ResearchRegressions(unittest.TestCase):
             "materials/custom/detail.vtf", failure.exception.details["unresolved"]
         )
         self.assertEqual(bsp.read_bytes(), before)
+
+    def test_packer_cannot_omit_or_change_required_assets(self):
+        from cli.hammerplusplus.delivery import pack_assets
+        from srctools.packlist import PackList
+
+        game = self.assets()
+        bsp = self.root / "map.bsp"
+        original_pack = PackList.pack_into_zip
+        target = "materials/custom/detail.vtf"
+        for replacement in (None, b"changed by packer"):
+            with self.subTest(replacement=replacement):
+                material_bsp(bsp)
+                before = bsp.read_bytes()
+
+                def incomplete_pack(pack, container, **kwargs):
+                    original_pack(pack, container, **kwargs)
+                    archive = zipfile.ZipFile(io.BytesIO(), "w")
+                    for name in container.pakfile.namelist():
+                        if name != target:
+                            archive.writestr(name, container.pakfile.read(name))
+                        elif replacement is not None:
+                            archive.writestr(name, replacement)
+                    container.pakfile = archive
+
+                with patch.object(PackList, "pack_into_zip", incomplete_pack):
+                    with self.assertRaisesRegex(backend.BackendError, "assets"):
+                        pack_assets(bsp, game)
+                self.assertEqual(bsp.read_bytes(), before)
+
+    def test_only_known_gokz_scalar_warnings_are_ignored(self):
+        from cli.hammerplusplus.delivery import pack_assets
+
+        game = self.assets()
+        bsp = self.root / "map.bsp"
+        material_bsp(
+            bsp,
+            entity_fields={
+                "classname": "trigger_multiple",
+                "climb_teleport_delay": "0.1",
+            },
+        )
+        self.assertTrue(pack_assets(bsp, game)["complete"])
+        for field in ("custom_material", "climb_mapping_api_version"):
+            with self.subTest(field=field):
+                material_bsp(
+                    bsp,
+                    entity_fields={
+                        "classname": "trigger_multiple",
+                        field: "custom/floor",
+                    },
+                )
+                before = bsp.read_bytes()
+                with self.assertRaises(backend.BackendError) as failure:
+                    pack_assets(bsp, game)
+                self.assertIn(field, "\n".join(failure.exception.details["warnings"]))
+                self.assertEqual(bsp.read_bytes(), before)
 
 
 if __name__ == "__main__":

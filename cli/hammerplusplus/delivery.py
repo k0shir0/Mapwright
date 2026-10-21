@@ -13,12 +13,26 @@ from .backend import BackendError
 from .project import atomic_write, digest
 from .vmf import MapError
 
+GOKZ_SCALAR_KEYS = {
+    "worldspawn": ("climb_mapping_api_version",),
+    "trigger_multiple": (
+        "climb_teleport_type",
+        "climb_teleport_destination",
+        "climb_teleport_delay",
+        "climb_teleport_use_dest_angles",
+        "climb_teleport_reset_speed",
+        "climb_teleport_reorient_player",
+        "climb_teleport_relative",
+        "climb_anti_bhop_time",
+    ),
+}
+
 
 def pack_assets(bsp_path: Path, game: Path) -> dict:
     catalog.source_tools()
     from srctools.bsp import BSP
     from srctools.filesys import ZipFileSystem
-    from srctools.packlist import PackList
+    from srctools.packlist import LOGGER as pack_logger, PackList
 
     bsp = BSP(bsp_path)
     filesystem = catalog.game_filesystem(game)
@@ -26,15 +40,18 @@ def pack_assets(bsp_path: Path, game: Path) -> dict:
     pack = PackList(filesystem)
     warnings = []
     owner = threading.get_ident()
+    ignored_warnings = {
+        f'Unknown keyvalue "{key}" for ent of type "{classname}"!'
+        for classname, keys in GOKZ_SCALAR_KEYS.items()
+        for key in keys
+    }
 
     class DependencyWarnings(logging.Handler):
         def emit(self, record):
-            if record.thread == owner and not record.getMessage().startswith(
-                "Unknown keyvalue "
-            ):
+            if record.thread == owner and record.getMessage() not in ignored_warnings:
                 warnings.append(record.getMessage())
 
-    logger = logging.getLogger("srctools.packlist")
+    logger = pack_logger.logger
     handler = DependencyWarnings(logging.WARNING)
     logger.addHandler(handler)
     try:
@@ -82,8 +99,33 @@ def pack_assets(bsp_path: Path, game: Path) -> dict:
         )
     # Include VPK dependencies too: a custom VPK mounted by the editor is no more
     # portable than a loose import mount. Engine shaders/runtime are still required.
-    pack.pack_into_zip(bsp, ignore_vpk=False)
+    required = {
+        name.casefold(): digest(bsp.pakfile.read(name))
+        for name in bsp.pakfile.namelist()
+    }
+    for dependency in pack:
+        if dependency.data is not None:
+            required[dependency.filename.casefold()] = digest(dependency.data)
+        elif dependency.filename in filesystem:
+            with filesystem.open_bin(dependency.filename) as stream:
+                required[dependency.filename.casefold()] = digest(stream.read())
+    logger.addHandler(handler)
+    try:
+        pack.pack_into_zip(bsp, ignore_vpk=False)
+    finally:
+        logger.removeHandler(handler)
     expected = {name: digest(bsp.pakfile.read(name)) for name in bsp.pakfile.namelist()}
+    packed_hashes = {name.casefold(): revision for name, revision in expected.items()}
+    mismatched = sorted(
+        name
+        for name, revision in required.items()
+        if packed_hashes.get(name) != revision
+    )
+    if mismatched or warnings:
+        raise BackendError(
+            "Required BSP assets failed packing verification",
+            {"mismatched": mismatched, "warnings": warnings, "bsp": str(bsp_path)},
+        )
     # Append only the PAK lump. Preserve every other byte and absolute game-lump
     # offset instead of round-tripping collision/entities through another parser.
     packed = io.BytesIO()
