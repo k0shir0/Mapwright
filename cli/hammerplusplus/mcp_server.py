@@ -46,6 +46,7 @@ def serve(project: Project, config: dict):
             "IDs have separate namespaces: supply kind when ambiguous. Pass the exact current revision to writes; dry_run previews. "
             "Use flat map_* tools for single edits, edit_map for atomic batches; only replace_source replaces untouched source. "
             "KZ behavior depends on exact climb_* names and GOKZ plugin settings. kz-room supplies main timer zones/course start. "
+            "This workflow delivers matching BSP/NAV files and embedded dependencies; empty NAVs prove presence only. package_map verifies the archive; runtime rendering, SKZ movement and replay behavior need separate evidence. "
             "Every tool request has a permanent action receipt; use timeline_status, action_history, inspect_action and checkout_action for saved-state recovery with retained future history. "
             "open_editor owns a private Windows desktop and staged map. Use inspected semantic controls, then save_editor with the source revision; close_editor releases its process tree. "
             "Native actions expose checkpointed/document_reversible; check them and inspect resulting state. capture_editor auto uses native viewport readback on verified renderer DLLs, with explicit UI-only fallback; viewport requires GPU capture and window captures UI chrome. Compile fresh and test the intended GOKZ mode in-game. "
@@ -187,6 +188,9 @@ def serve(project: Project, config: dict):
             async with anyio.create_task_group() as group:
                 if token is not None and name in (
                     "compile_map",
+                    "package_map",
+                    "edit_map",
+                    "copy_reference_objects",
                     "import_reference_map",
                     "create_checkpoint",
                     "restore_checkpoint",
@@ -268,7 +272,10 @@ inspect_checkpoint lists every current revision needed for restore_checkpoint;
 restoration keeps a reverse checkpoint and resumable recovery receipt. Never overwrite
 external changes. operation_log, list_artifacts and read_artifact expose evidence.
 Import references to new VMFs, inspect actual selections, then copy with both revisions.
-Compile to a fresh BSP, inspect stage logs and real editor captures, then use kz_test_plan
+Compile with asset packing enabled for a fresh BSP and matching NAV; empty NAVs
+prove presence only. package_map verifies archive contents and build hashes.
+Use kz_audit timer_profile=buttons for physical +use timers; profile spawn capacity.
+Inspect stage logs and real editor captures, then use kz_test_plan
 on the intended GOKZ mode/server. Process launch, structural validity and box geometry
 do not prove rendering, movement feasibility or playability. Unusual geometry needs
 manual/editor inspection. GOKZ zones are named Hammer entities, not an in-game zone editor.

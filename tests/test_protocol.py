@@ -215,6 +215,28 @@ class ProtocolTests(unittest.TestCase):
                     )
                     self.assertFalse(imported.isError)
                     self.assertTrue(progress)
+                    progress.clear()
+                    edit = await client.call_tool(
+                        "edit_map",
+                        {
+                            "path": "kz_test.vmf",
+                            "expected_revision": created.structuredContent["data"][
+                                "revision"
+                            ],
+                            "operations": [
+                                {
+                                    "op": "set_properties",
+                                    "id": 1,
+                                    "kind": "world",
+                                    "properties": {"message": "progress check"},
+                                }
+                            ],
+                            "dry_run": True,
+                        },
+                        progress_callback=callback,
+                    )
+                    self.assertFalse(edit.isError)
+                    self.assertTrue(progress)
                     file = self.root / "kz_test.vmf"
                     file.write_text(
                         file.read_text().replace(

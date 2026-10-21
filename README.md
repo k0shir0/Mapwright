@@ -58,6 +58,12 @@ mapwright kz-test-plan maps/kz_example.vmf
   Completed invalid checks retain `ok:true` and return CLI exit 1; inspect
   `data.valid`, findings, `complete`, and `unsupported_geometry`.
 
+`compile` / `compile_map` stages matching BSP/NAV files and embeds discovered
+material/sky/prop dependencies by default (`source` extra required). Missing
+dependencies fail. NAVs are preserved or created empty; presence does not prove
+navigation or replay behavior. `mapwright package BUILD_DIR OUTPUT.zip` verifies
+build hashes and the archive's BSP/NAV pair. See [delivery and runtime checks](docs/kz-mapping.md).
+
 ## Task guides
 
 | Task | Read |

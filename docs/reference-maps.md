@@ -37,5 +37,12 @@ virtual paths with different bytes are refused. Restart an open editor after
 a new mount. Map undo retains mounts: [checkpoint](recovery.md) the destination,
 local gameinfo and assets together before copying. Preview changes neither.
 
+Use `asset_paths` for an exact game-relative allowlist when an import contains
+unrelated NAVs or stock assets. Only selected files are conflict-checked and
+mounted in an isolated directory; include transitive VMT/VTF and sky dependencies.
+An empty list copies geometry without assets. Omitting it retains the full-import
+mount and its conflict checks. Compilation checks and packs discovered runtime
+dependencies separately; an editor mount is not a game installation.
+
 BSP decompilation cannot recover every original entity, instance, asset or
 authoring detail. Keep provenance; inspect dependencies rather than guessing.

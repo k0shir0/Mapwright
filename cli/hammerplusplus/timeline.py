@@ -828,7 +828,7 @@ def known_files(project, config, tool, args):
         return names
     elif tool == "import_reference_map":
         name = args.get("output")
-    elif tool == "capture_editor":
+    elif tool in ("capture_editor", "package_map"):
         name = args.get("output")
     elif tool == "restore_map_file" and isinstance(args.get("token"), str):
         token = args["token"]
