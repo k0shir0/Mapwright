@@ -123,7 +123,7 @@ TOOLS = {
         [],
     ),
     "read_map_source": spec(
-        "Read any native VMF feature as paginated source text with its revision. Use replace_source in edit_map to author features without a specialized helper.",
+        "Read native VMF source with its revision. offset is characters; limit is 1..1000000 characters per page. Use replace_source in edit_map to author unsupported features.",
         {
             "path": MAP,
             "offset": {"type": "integer", "minimum": 0},
@@ -185,6 +185,12 @@ TOOLS = {
             "delta": VECTOR,
             "prefix": STRING,
             "include_links": {"type": "boolean"},
+            "asset_paths": {
+                "type": "array",
+                "items": STRING,
+                "maxItems": 10000,
+                "description": "Optional exact game-relative imported asset allowlist, including transitive textures/sky. Unselected assets are neither mounted nor conflict-checked; [] copies geometry only.",
+            },
             "dry_run": {"type": "boolean"},
         },
         ["source", "destination", "source_revision", "expected_revision", "selection"],
@@ -285,12 +291,17 @@ TOOLS = {
         False,
     ),
     "compile_map": spec(
-        "Invoke actual configured VBSP/VVIS/VRAD in a fresh staging directory. Missing tools, timeouts and leaks fail. Does not install outputs into the game.",
+        "Compile fresh BSP/NAV outputs and embed discovered material/sky/prop dependencies by default (source extra required). Missing dependencies, tools, timeouts and leaks fail. NAV may be an empty placeholder, not a parsed mesh. Outputs are staged; gameplay remains unverified.",
         {
             "path": MAP,
             "expected_revision": REVISION,
             "mode": {"enum": ["bsp", "fast", "full"]},
             "timeout": {"type": "integer", "minimum": 1, "maximum": 3600},
+            "pack_assets": {
+                "type": "boolean",
+                "default": True,
+                "description": "Embed discovered dependencies; false produces an unpackaged development build that package_map refuses.",
+            },
         },
         ["path", "expected_revision"],
         False,
@@ -299,6 +310,12 @@ TOOLS = {
         "Open a staged copy of this VMF in an owned Hammer++ session on a private Windows desktop. Handles known startup dialogs and waits for the requested map title; returns owned PID/session ID. No user desktop switch. Does not prove GPU rendering.",
         {"path": MAP, "timeout": {"type": "integer", "minimum": 1, "maximum": 120}},
         ["path"],
+        False,
+    ),
+    "package_map": spec(
+        "Create a new workspace ZIP from a compile receipt with verified embedded assets and matching BSP/NAV hashes. Read back every archive entry; refuses overwrite or changed build files. Does not install or prove gameplay.",
+        {"build_dir": STRING, "output": STRING},
+        ["build_dir", "output"],
         False,
     ),
     "save_editor": spec(
@@ -314,7 +331,7 @@ TOOLS = {
         False,
     ),
     "capture_editor": spec(
-        "Capture an owned private-desktop Hammer++ viewport to a new workspace PNG using native render-thread readback. auto tries the verified renderer profile then explicitly reports any fallback to UI-only PrintWindow; viewport requires GPU readback, window captures UI chrome. No focus or user desktop capture.",
+        "Capture an owned private-desktop Hammer++ viewport to a NEW workspace PNG; existing output names are refused. auto tries the verified renderer profile then explicitly reports any fallback to UI-only PrintWindow; viewport requires GPU readback, window captures UI chrome. No focus or user desktop capture.",
         {
             "pid": {"type": "integer", "minimum": 1},
             "output": STRING,
@@ -364,7 +381,7 @@ KZ_TOOLS = {
     ),
     "kz_check_bhop": (
         "bhop",
-        "Check GOKZ teleport types/delays and optionally ordered landing-block route gaps/reset-ground candidates.",
+        "Check GOKZ teleport types/delays and optionally all adjacent gaps of an ordered 2..1000-node route; no truncation. Reset-ground candidates are heuristic.",
     ),
     "kz_measure_jumps": (
         "measure",
@@ -388,7 +405,7 @@ KZ_TOOLS = {
     ),
     "kz_spawn_check": (
         "spawns",
-        "Check team spawn presence/parity, brush hull overlap, angles, ceilings and start zones.",
+        "Check team spawn presence/parity/capacity, box hull overlap and floor support, angles, ceilings and start zones. Does not verify replay bots or route access.",
     ),
     "kz_test_plan": (
         "test_plan",
@@ -398,6 +415,19 @@ KZ_TOOLS = {
 for name, (check, description) in KZ_TOOLS.items():
     props = {"path": MAP}
     required = ["path"]
+    if check == "audit":
+        props["timer_profile"] = {
+            "enum": ["either", "buttons"],
+            "description": "either accepts zones or buttons; buttons requires physical main/bonus buttons with Use Activates.",
+        }
+    if check in ("audit", "spawns"):
+        for team in ("t", "ct"):
+            props[f"minimum_{team}_spawns"] = {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 128,
+                "description": "Required team spawn capacity for this server profile; not a replay-bot certification.",
+            }
     if check in ("measure", "headhitter"):
         props.update(start=SELECTOR, end=SELECTOR)
         if check == "measure":
@@ -411,7 +441,7 @@ for name, (check, description) in KZ_TOOLS.items():
             "type": "array",
             "items": SELECTOR,
             "minItems": 2,
-            "maxItems": 100,
+            "maxItems": 1000,
         }
     TOOLS[name] = spec(
         description
@@ -607,6 +637,10 @@ def _execute(project: Project, config: dict, action: str, args: dict) -> dict:
         ) from exc
     values = dict(args)
     path = values.pop("path", None)
+    if action == "package_map":
+        from .delivery import package_map
+
+        return package_map(project, **values)
     if action in {
         "timeline_status",
         "action_history",

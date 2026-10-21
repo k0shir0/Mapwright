@@ -131,6 +131,9 @@ def main():
                     },
                 )
                 assert compile["bsp"]["version"] == 21
+                nav = Path(compile["nav"]["path"])
+                assert nav == Path(compile["bsp"]["path"]).with_suffix(".nav")
+                assert nav.read_bytes() == b"" and compile["nav"]["empty"]
                 bsp = Path(compile["bsp"]["path"]).read_bytes()
                 offset, size = struct.unpack_from("<ii", bsp, 8)
                 entities = bsp[offset : offset + size].decode("utf-8", errors="replace")

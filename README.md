@@ -58,6 +58,12 @@ mapwright kz-test-plan maps/kz_example.vmf
   Completed invalid checks retain `ok:true` and return CLI exit 1; inspect
   `data.valid`, findings, `complete`, and `unsupported_geometry`.
 
+`compile` / `compile_map` stages matching BSP/NAV files and embeds discovered
+material/sky/prop dependencies by default (`source` extra required). Missing
+dependencies fail. NAVs are preserved or created empty; presence does not prove
+navigation or replay behavior. `mapwright package BUILD_DIR OUTPUT.zip` verifies
+build hashes and the archive's BSP/NAV pair. See [delivery and runtime checks](docs/kz-mapping.md).
+
 ## Task guides
 
 | Task | Read |
@@ -96,7 +102,8 @@ python scripts/verify_native_session.py --run
 
 CI checks and formatter version: [.github/workflows/checks.yml](.github/workflows/checks.yml).
 Structural checks and compilation do not prove rendering or playability.
-Inspect editor captures and test the compiled map on the intended KZ server.
+Follow the [verification scope](docs/kz-mapping.md#verification-scope) for map
+delivery; geometry and appearance checks do not require a full-course playthrough.
 The portable MCP suite exercises every advertised tool, with explicit native
 contract fixtures and missing-prerequisite errors. The opt-in native lane uses
 the actual configured compiler, REA and private-desktop Hammer++ process,

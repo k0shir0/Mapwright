@@ -339,6 +339,7 @@ def copy_objects(
     include_links: bool = True,
     dry_run: bool = False,
     config=None,
+    asset_paths=None,
 ) -> dict:
     source_path, src_data, src_text, _ = project.read(source)
     _, dst_data, dst_text, _ = project.read(destination)
@@ -621,17 +622,50 @@ def copy_objects(
     asset_mount = {"required": False, "mounted": False}
     if provenance and provenance.get("assets_dir"):
         assets = project.confined(provenance["assets_dir"])
-        if assets.is_dir() and any(assets.iterdir()):
+        incoming_files = sorted(p for p in assets.rglob("*") if p.is_file())
+        source_assets = assets
+        if asset_paths is not None:
+            selected = []
+            for virtual in asset_paths:
+                candidate = project.confined(assets / virtual)
+                if (
+                    Path(virtual).is_absolute()
+                    or ".." in Path(virtual).parts
+                    or not candidate.is_relative_to(assets)
+                    or not candidate.is_file()
+                ):
+                    raise vmf.MapError(f"Invalid imported asset path: {virtual}")
+                selected.append(candidate)
+            incoming_files = sorted(set(selected))
+            manifest = {
+                p.relative_to(assets).as_posix(): digest(p.read_bytes())
+                for p in incoming_files
+            }
+            assets = project.confined(
+                ".hammer-agent/asset-mounts/"
+                + digest(json.dumps(manifest, sort_keys=True).encode())
+            )
+            if not dry_run:
+                for incoming in incoming_files:
+                    target = project.confined(
+                        assets / incoming.relative_to(source_assets)
+                    )
+                    data = incoming.read_bytes()
+                    if target.exists() and target.read_bytes() != data:
+                        raise vmf.MapError(
+                            "Selected asset mount changed; inspect before copying"
+                        )
+                    if not target.exists():
+                        atomic_write(target, data, exclusive=True)
+        if incoming_files:
             asset_mount = {"required": True, "directory": str(assets), "mounted": False}
             game = configured_path(project, config or {}, "game_dir")
             if game:
                 info = project.confined(game / "gameinfo.txt")
                 raw = info.read_bytes()
                 filesystem = catalog.game_filesystem(game)
-                for incoming in assets.rglob("*"):
-                    if not incoming.is_file():
-                        continue
-                    virtual = incoming.relative_to(assets).as_posix()
+                for incoming in incoming_files:
+                    virtual = incoming.relative_to(source_assets).as_posix()
                     incoming_hash = digest(incoming.read_bytes())
                     for provider, subfolder in filesystem.systems:
                         try:
@@ -709,6 +743,7 @@ def copy_objects(
         "external_references": sorted(external),
         "reference_provenance": provenance,
         "asset_mount": asset_mount,
+        "asset_paths": asset_paths,
         "warnings": [
             "Groups and visgroup membership are detached from copied objects. Recreate destination grouping as desired.",
             "BSP decompilation cannot recover every original authoring feature. Inspect and compile the copied section.",

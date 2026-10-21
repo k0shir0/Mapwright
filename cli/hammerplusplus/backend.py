@@ -234,14 +234,16 @@ def compile_map(
     expected_revision: str,
     mode: str = "fast",
     timeout: int = 120,
+    pack_assets: bool = True,
 ) -> dict:
     if (
         mode not in ("bsp", "fast", "full")
+        or not isinstance(pack_assets, bool)
         or isinstance(timeout, bool)
         or not 1 <= timeout <= 3600
     ):
         raise MapError(
-            "mode must be bsp, fast or full; timeout between 1 and 3600 seconds"
+            "mode must be bsp, fast or full; pack_assets must be boolean; timeout between 1 and 3600 seconds"
         )
     source, data, text, _ = project.read(name)
     if digest(data) != expected_revision:
@@ -318,7 +320,21 @@ def compile_map(
                 f"{key} did not produce a BSP",
                 {"build_dir": str(build), "stages": results},
             )
+    bsp_info(bsp)
+    if pack_assets:
+        from .delivery import pack_assets as pack
+
+        assets = pack(bsp, game)
+    else:
+        assets = {"complete": False, "status": "not_checked", "unresolved": None}
     info = bsp_info(bsp)
+    nav = bsp.with_suffix(".nav")
+    if not nav.exists():
+        source_nav = project.confined(source.with_suffix(".nav"))
+        atomic_write(
+            nav, source_nav.read_bytes() if source_nav.exists() else b"", exclusive=True
+        )
+    nav_data = nav.read_bytes()
     receipt = {
         "source": str(source),
         "source_revision": expected_revision,
@@ -326,6 +342,24 @@ def compile_map(
         "mode": mode,
         "stages": results,
         "bsp": info,
+        "nav": {
+            "path": str(nav),
+            "bytes": len(nav_data),
+            "revision": digest(nav_data),
+            "empty": not nav_data,
+            "validation": "empty_placeholder" if not nav_data else "not_parsed",
+            "pathfinding_verified": False,
+        },
+        "assets": assets,
+        "verification": {
+            "compilation_succeeded": True,
+            "assets_verified": assets["complete"],
+            "nav_present": True,
+            "nav_parsed": False,
+            "editor_rendering_verified": False,
+            "gameplay_verified": False,
+            "replay_bots_verified": False,
+        },
         "elapsed_seconds": round(time.monotonic() - start, 3),
         "limitations": "Compile success does not establish editor rendering or in-game playability; build outputs are staged, not installed into the game.",
     }
