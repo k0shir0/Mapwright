@@ -449,6 +449,54 @@ class ReferenceTests(unittest.TestCase):
         self.assertFalse((self.root / "reference.vmf").exists())
         self.assertFalse((self.root / ".hammer-agent/imports/escape.vmt").exists())
 
+    def test_asset_allowlist_excludes_unrelated_conflicts_and_mounts_only_selected_files(
+        self,
+    ):
+        path, config = self.fake_bsp(
+            {"materials/custom/test.vmt": b"selected", "maps/old.nav": b"unused nav"}
+        )
+        with patch.object(reference.subprocess, "run", self.decompile):
+            imported = reference.import_map(
+                self.project, config, str(path), "reference.vmf"
+            )
+        source = (
+            self.project.source("reference.vmf")["source"]
+            + '\nentity { "id" "2" "classname" "info_target" "origin" "0 0 0" }'
+        )
+        changed = self.project.apply(
+            "reference.vmf",
+            imported["revision"],
+            [{"op": "replace_source", "source": source}],
+        )
+        game = self.root / "game"
+        (game / "maps").mkdir(parents=True)
+        (game / "maps/old.nav").write_bytes(b"different existing nav")
+        info = game / "gameinfo.txt"
+        info.write_text(
+            'GameInfo { FileSystem { SearchPaths { Game "' + game.as_posix() + '" } } }'
+        )
+        args = dict(
+            project=self.project,
+            source="reference.vmf",
+            destination="destination.vmf",
+            source_revision=changed["revision"],
+            expected_revision=self.revision("destination.vmf"),
+            selection=[{"id": 2, "kind": "entity"}],
+            config={**config, "game_dir": str(game)},
+            asset_paths=["materials/custom/test.vmt"],
+        )
+        preview = reference.copy_objects(**args, dry_run=True)
+        mount = Path(preview["asset_mount"]["directory"])
+        self.assertFalse(mount.exists())
+        reference.copy_objects(**args)
+        self.assertEqual(
+            (mount / "materials/custom/test.vmt").read_bytes(), b"selected"
+        )
+        self.assertFalse((mount / "maps/old.nav").exists())
+        self.assertEqual(
+            (game / "maps/old.nav").read_bytes(), b"different existing nav"
+        )
+
     def test_conflicting_embedded_asset_is_rejected_before_map_or_mount_changes(self):
         path, config = self.fake_bsp({"materials/custom/test.vmt": b"incoming"})
         with patch.object(reference.subprocess, "run", self.decompile):
@@ -490,6 +538,20 @@ class ReferenceTests(unittest.TestCase):
             )
         self.assertEqual(info.read_bytes(), before)
         self.assertEqual(self.revision("destination.vmf"), revision)
+
+        # Unrelated embedded files must not block an explicitly geometry-only copy.
+        result = reference.copy_objects(
+            self.project,
+            "reference.vmf",
+            "destination.vmf",
+            changed["revision"],
+            revision,
+            [{"id": 2, "kind": "entity"}],
+            config=config,
+            asset_paths=[],
+        )
+        self.assertFalse(result["asset_mount"]["required"])
+        self.assertEqual(info.read_bytes(), before)
 
     def test_api_publishes_all_reference_tools_with_schema_validation(self):
         for name in (

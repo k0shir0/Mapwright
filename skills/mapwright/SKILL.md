@@ -48,7 +48,11 @@ installs this skill with the linked guides bundled alongside it.
    explicitly. Read uniform-frame warnings; inspect the image and camera/map
    state before claiming visible geometry. Native actions checkpoint staged documents
    where supported; inspect `checkpointed` and `document_reversible`.
-8. Test the compiled BSP on the intended server/mode before claiming playability.
+8. Compile with dependency packing enabled, then use `package_map` to verify
+   the same-named BSP/NAV archive. Empty NAVs prove file presence only.
+   For physical timers, audit with `timer_profile=buttons`; set spawn capacity
+   for the server profile. Follow the [runtime checks](../../docs/kz-mapping.md#skz-and-replay-verification)
+   on the intended server/mode before claiming playability or replay support.
 
 Transport results are `{ok:true,data:...}` or `{ok:false,error:...,details?:...}`.
 Completed checks can return findings despite success: inspect `valid`, `complete`,

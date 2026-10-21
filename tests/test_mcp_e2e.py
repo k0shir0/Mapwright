@@ -198,6 +198,25 @@ class MCPEndToEndTests(unittest.TestCase):
                         doctor = await call("doctor")
                         self.assertFalse(doctor["compile_ready"])
                         self.assertTrue(doctor["fgd_ready"])
+                        # Portable archive transport fixture, not a native compile.
+                        build = self.root / "archive-fixture"
+                        build.mkdir()
+                        from cli.hammerplusplus.project import digest
+
+                        payloads = {"bsp": b"archive BSP fixture", "nav": b""}
+                        receipt = {
+                            "assets": {"complete": True},
+                            "verification": {"gameplay_verified": False},
+                        }
+                        for kind, raw in payloads.items():
+                            path = build / ("fixture." + kind)
+                            path.write_bytes(raw)
+                            receipt[kind] = {"path": str(path), "revision": digest(raw)}
+                        (build / "receipt.json").write_text(json.dumps(receipt))
+                        packaged = await call(
+                            "package_map", build_dir=str(build), output="fixture.zip"
+                        )
+                        self.assertTrue(packaged["verified"])
                         created = await call(
                             "create_map", path="kz.vmf", template="kz-room"
                         )

@@ -101,6 +101,7 @@ COMMANDS = {
     "undo": "undo_map",
     "redo": "redo_map",
     "compile": "compile_map",
+    "package": "package_map",
     "editor-open": "open_editor",
     "editor-save": "save_editor",
     "editor-close": "close_editor",
@@ -239,6 +240,12 @@ def parser():
         if command == "compile":
             sub.add_argument("--mode", choices=["bsp", "fast", "full"], default="fast")
             sub.add_argument("--timeout", type=int, default=120)
+            sub.add_argument(
+                "--pack-assets", action=argparse.BooleanOptionalAction, default=True
+            )
+    package = commands.add_parser("package")
+    package.add_argument("build_dir")
+    package.add_argument("output")
     capture = commands.add_parser("editor-capture")
     capture.add_argument("pid", type=int)
     capture.add_argument("output")
@@ -309,6 +316,13 @@ def parser():
         sub = commands.add_parser(command)
         sub.add_argument("path")
         check = KZ_TOOLS[action][0]
+        if check == "audit":
+            sub.add_argument(
+                "--timer-profile", choices=["either", "buttons"], default="either"
+            )
+        if check in ("audit", "spawns"):
+            sub.add_argument("--minimum-t-spawns", type=int, default=1)
+            sub.add_argument("--minimum-ct-spawns", type=int, default=1)
         if check in ("measure", "headhitter"):
             sub.add_argument(
                 "--start",
@@ -330,7 +344,7 @@ def parser():
                 "--route",
                 type=read_json,
                 default=argparse.SUPPRESS,
-                help="Ordered JSON array of landing-solid selectors or @file",
+                help="Ordered JSON array of 2..1000 landing-solid selectors or @file",
             )
         if check in ("bhop", "measure"):
             sub.add_argument("--minimum-mbh", type=float, default=300)

@@ -230,7 +230,7 @@ class Analysis:
         ]
         return max(tops) if tops else None
 
-    def audit(self):
+    def audit(self, timer_profile="either"):
         worlds = self.root.blocks("world")
         version = worlds[0].get("climb_mapping_api_version") if len(worlds) == 1 else ""
         if not re.fullmatch(r"[1-9][0-9]*", version):
@@ -295,6 +295,17 @@ class Analysis:
                             e,
                             spawnflags=flags,
                         )
+                    if (
+                        timer_profile == "buttons"
+                        and flags is not None
+                        and not flags & 1024
+                    ):
+                        self.add(
+                            "button.use",
+                            "Physical timer buttons need Use Activates (1024)",
+                            e,
+                            "error",
+                        )
                 else:
                     flags = self.number(e, "spawnflags", integer=True)
                     if flags is not None and not flags & 1:
@@ -336,6 +347,14 @@ class Analysis:
                 )
         for course, ends in courses.items():
             for end in ("start", "end"):
+                if timer_profile == "buttons" and not any(
+                    e.get("classname") == "func_button" for e in ends[end]
+                ):
+                    self.add(
+                        "timer.buttons_required",
+                        f"Physical-button profile requires {course or 'main'} {end} func_button",
+                        severity="error",
+                    )
                 if not ends[end]:
                     self.add(
                         "timer.pair",
@@ -738,12 +757,19 @@ class Analysis:
             )
         return {"water_brushes": rows, "swim_speed_multiplier": 0.8}
 
-    def spawns(self):
+    def spawns(self, minimum_t_spawns=1, minimum_ct_spawns=1):
         counts = Counter(e.get("classname") for e in self.entities)
         classes = ("info_player_terrorist", "info_player_counterterrorist")
         for cls in classes:
             if not counts[cls]:
                 self.add("spawn.missing", f"No {cls} spawn", severity="error")
+        for cls, minimum in zip(classes, (minimum_t_spawns, minimum_ct_spawns)):
+            if counts[cls] < minimum:
+                self.add(
+                    "spawn.capacity",
+                    f"{cls} has {counts[cls]} spawns; profile requires {minimum}",
+                    severity="error",
+                )
         if counts[classes[0]] != counts[classes[1]]:
             self.add(
                 "spawn.parity",
@@ -757,6 +783,15 @@ class Analysis:
             self.angles(e)
             if p is None:
                 continue
+            floor = self.floor(p)
+            if floor is None or p[2] - floor > 18:
+                self.add(
+                    "spawn.support",
+                    "No box floor within 18 units beneath spawn origin; inspect unsupported geometry in-game",
+                    e,
+                    "warning" if self.unsupported else "error",
+                    floor_z=floor,
+                )
             hull = {
                 "min": [p[0] - 16, p[1] - 16, p[2]],
                 "max": [p[0] + 16, p[1] + 16, p[2] + 72],
@@ -794,7 +829,16 @@ class Analysis:
                                 e,
                                 zone_id=zone.get("id"),
                             )
-        return {"spawn_counts": {c: counts[c] for c in classes}}
+        return {
+            "spawn_counts": {c: counts[c] for c in classes},
+            "checks_performed": [
+                "box_hull_clearance",
+                "box_floor_support",
+                "team_capacity",
+            ],
+            "route_verified": False,
+            "replay_bots_verified": False,
+        }
 
 
 def water(material):
@@ -839,13 +883,17 @@ def run(project, path, check="audit", **options):
     analysis = Analysis(text)
     data = {}
     if check == "audit":
-        analysis.audit()
+        analysis.audit(options.get("timer_profile", "either"))
         analysis.antibhop()
         data["teleports"] = analysis.teleports()
         data.update(analysis.bhop())
         data.update(analysis.ladders())
         data.update(analysis.water())
-        data.update(analysis.spawns())
+        data.update(
+            analysis.spawns(
+                options.get("minimum_t_spawns", 1), options.get("minimum_ct_spawns", 1)
+            )
+        )
         # Avoid an O(brushes squared) whole-map ceiling scan in the default audit.
     elif check == "measure":
         data = measure_boxes(
@@ -909,8 +957,10 @@ def test_plan(project, path):
         "revision": report["revision"],
         "steps": [
             "Validate VMF structure, review kz_audit findings, compile a fresh BSP and inspect Hammer++ captures.",
+            "Package and install matching BSP/NAV outputs with verified embedded assets; NAV file presence alone does not prove a parsed mesh or replay behavior.",
             "Load the compiled map on a 128-tick legacy CS:GO SourceMod server with the intended GOKZ version, DHooks and MovementAPI.",
             "Select the intended VNL/SKZ/KZT mode; use its actual cvars. Compare all supported modes separately.",
+            "For SKZ, verify gokz-mode-simplekz and actual movement with a completed route; play recorded runs at the expected concurrent replay load, with combat bot quota zero. Record plugin versions, mode and plugin/engine bot limits.",
             "Test main/bonus start and end timers, zone exit/entry behavior, !m and !b <number>, !checkpoint/!gocheck and !ssp/!csp.",
             "Use GOKZ +measure and !measureblock. KZTimer-specific !measure/!bhopcheck require that plugin.",
             "Walk, jumpbug and triggerhop through anti-bhop; test every bhop reset, teleport angle/speed option, ladder exit, water contact and headhitter chain.",

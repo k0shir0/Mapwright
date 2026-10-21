@@ -32,6 +32,12 @@ class BackendTests(unittest.TestCase):
         game.mkdir()
         (game / "gameinfo.txt").write_text("gameinfo {}")
         self.config = {"game_dir": str(game)}
+        # These compiler-boundary fixtures deliberately contain no real BSP data.
+        self.packing = patch(
+            "cli.hammerplusplus.delivery.pack_assets", return_value={"complete": True}
+        )
+        self.packing.start()
+        self.addCleanup(self.packing.stop)
         for tool in ("vbsp", "vvis", "vrad"):
             path = self.root / (tool + ".exe")
             path.write_bytes(b"not a real executable")
@@ -119,8 +125,46 @@ class BackendTests(unittest.TestCase):
         self.assertIn("-fast", calls[1])
         self.assertIn("-hdr", calls[2])
         self.assertEqual(result["bsp"]["version"], 21)
+        nav = Path(result["nav"]["path"])
+        self.assertEqual(nav, Path(result["bsp"]["path"]).with_suffix(".nav"))
+        self.assertEqual(nav.read_bytes(), b"")
+        self.assertTrue(result["nav"]["empty"])
+        self.assertEqual(result["nav"]["bytes"], 0)
         self.assertTrue((Path(result["build_dir"]) / "receipt.json").is_file())
         self.assertNotEqual(Path(result["build_dir"]), self.root)
+
+    def test_compile_preserves_existing_nav(self):
+        for produced_by_compiler in (False, True):
+            with self.subTest(produced_by_compiler=produced_by_compiler):
+                (self.root / "map.nav").write_bytes(b"source navigation")
+
+                class Process:
+                    def __init__(self, args, **kwargs):
+                        staged = Path(args[-1])
+                        staged.with_suffix(".bsp").write_bytes(synthetic_bsp())
+                        if produced_by_compiler:
+                            staged.with_suffix(".nav").write_bytes(
+                                b"compiler navigation"
+                            )
+
+                    def wait(self, **kwargs):
+                        return 0
+
+                with patch.object(backend.subprocess, "Popen", Process):
+                    result = backend.compile_map(
+                        self.project, self.config, "map.vmf", self.revision, mode="bsp"
+                    )
+                expected = (
+                    b"compiler navigation"
+                    if produced_by_compiler
+                    else b"source navigation"
+                )
+                self.assertEqual(Path(result["nav"]["path"]).read_bytes(), expected)
+                self.assertEqual(result["nav"]["bytes"], len(expected))
+                self.assertFalse(result["nav"]["empty"])
+                self.assertEqual(
+                    (self.root / "map.nav").read_bytes(), b"source navigation"
+                )
 
     def test_timeout_kills_and_reaps_compiler(self):
         events = []
