@@ -4,7 +4,7 @@
 
 Local CLI and stdio MCP for KZ mapping in legacy CS:GO Source 1 with Hammer++.
 Author VMFs, copy BSP/VMF sections, audit GOKZ entities, measure jumps, compile
-maps, and operate the editor. Cs2 and Cs-Source is unsupported.
+maps, and operate the editor. CS2 and CSS is unsupported.
 
 ## Install
 
