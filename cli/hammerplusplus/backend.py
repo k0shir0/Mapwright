@@ -165,7 +165,7 @@ def doctor(project: Project, config: dict) -> dict:
         "fgd_ready": bool(fgd_paths(project, config))
         and all(p.is_file() for p in fgd_paths(project, config)),
         "readiness_scope": "Paths and prerequisites only; verify actual compilation, decompilation and visible editor rendering separately.",
-        "setup": "Use scripts/setup_local.py with an owned legacy CS:GO runtime, or install the legacy CS:GO SDK through Steam. Tools++ supports Source 1 CS:GO. CS2 tools cannot compile VMF.",
+        "setup": "Follow skills/mapwright-setup/SKILL.md and docs/setup.md native prerequisite checks, then use scripts/setup_agent.py with a verified --runtime. Preserve existing Steam games, launchers and settings; install missing native tools in a fresh workspace. Tools++ supports Source 1 CS:GO. CS2 tools cannot compile VMF.",
     }
 
 

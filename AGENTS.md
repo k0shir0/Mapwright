@@ -5,7 +5,10 @@ Target: KZ-first legacy CS:GO Source 1 VMF/VBSP and Hammer++.
 ## Context
 
 - Local MCP installation, client registration, or setup: read the
-  [setup skill](skills/mapwright-setup/SKILL.md) and run its automatic workflow.
+  [setup skill](skills/mapwright-setup/SKILL.md). The agent checks/provisions
+  missing prerequisites, then uses the existing setup scripts; do not build
+  another installer. Follow the [native prerequisite checks](docs/setup.md#native-prerequisite-checks)
+  when Hammer/SDK locations are unknown or either is absent.
   On a fresh or moved checkout, satisfy the [machine prerequisites](docs/setup.md#fresh-machine-prerequisites),
   regenerate local paths, and verify setup in an isolated Python environment.
   For native work, complete the skill's compile/render checks before claiming readiness.
@@ -14,6 +17,14 @@ Target: KZ-first legacy CS:GO Source 1 VMF/VBSP and Hammer++.
 - Backend installation/config: [setup](docs/setup.md).
 - References and recovery: [copying](docs/reference-maps.md), [recovery](docs/recovery.md).
 - Tool fields: `mapwright schema`; CLI flags: `mapwright COMMAND --help`.
+
+Setup preserves existing settings, Steam games/branches, launchers and editor
+installations. Discover them read-only; install missing tools in a fresh
+workspace-local directory. Inspect the setup preview before applying it. If an
+existing configuration would be replaced, reuse it unchanged or select a fresh
+workspace/distinct server name. Do not treat a backup as permission to overwrite
+settings or run Steam validation against an existing game. See the setup skill
+for the allowed file scope and actual-readiness checks.
 
 ## Code
 

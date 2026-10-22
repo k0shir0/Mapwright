@@ -9,19 +9,30 @@ maps, and operate the editor all from an any AI agent. CS2 and CSS is unsupporte
 ## Install
 
 Point your agent at this checkout and ask it to set up local Mapwright MCP.
-The [setup skill](skills/mapwright-setup/SKILL.md) installs the Python environment,
-registers the requested client, bundles mapping guides, and verifies the server.
-Python 3.11+ is required. For example, in PowerShell:
+The [setup skill](skills/mapwright-setup/SKILL.md) checks what is already present,
+provisions missing prerequisites, and uses the existing installers to register
+MCP, bundle guides and verify the server. From the checkout, the same installer
+command works on Windows, Linux and macOS with Python 3.11+:
 
-```powershell
-python scripts/setup_agent.py --client codex --yes
+```sh
+python scripts/setup_agent.py --yes
 ```
 
 Clients: Codex, Claude Code, OpenCode, Google Antigravity, pi and Hermes.
 Project scope is the default; Hermes uses `--scope user` for its active profile.
-Run without `--yes` to preview resolved paths. `--help` covers client detection,
-workspace selection and rollback. No hand-written client config or shell
-activation is needed. See [agent connections](docs/agent-connections.md).
+The command detects installed clients; use `--client codex` (or another client
+ID) to select just one. Run without `--yes` to preview resolved paths. An agent
+selects its current/requested client and checks that preview before applying it.
+If Python is missing but `uv` is available, use the same installer through
+`uv run --no-project --python 3.13 scripts/setup_agent.py --yes`.
+If neither is installed, follow [Python provisioning](docs/setup.md#python-provisioning).
+`--help` covers workspace selection and rollback. No shell activation is needed.
+See [agent connections](docs/agent-connections.md).
+
+Windows native work also needs compatible legacy CS:GO engine/content.
+The [native checklist](docs/setup.md#native-prerequisite-checks) covers missing
+tools and unknown install locations. Setup keeps existing settings, Steam games,
+branches, launchers and editors intact; new native tools live in the workspace.
 
 For a package-only development install:
 
