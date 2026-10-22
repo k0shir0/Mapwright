@@ -363,6 +363,24 @@ class PerformanceRecoveryTests(unittest.TestCase):
         )
         self.assertEqual(ledger.state(ledger.head(), []), {})
 
+    def test_lock_recovery_requires_confirmed_dead_process(self):
+        from cli.hammerplusplus import workspace
+
+        path = self.project.confined(".hammer-agent/write.lock")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({"pid": 1234}))
+        for alive in (True, None, False):
+            with patch.object(timeline, "alive", return_value=alive):
+                state = workspace.lock_status(self.project)
+                self.assertIs(state["alive"], alive)
+                if alive is False:
+                    workspace.recover_lock(self.project, state["revision"])
+                    self.assertFalse(path.exists())
+                else:
+                    with self.assertRaisesRegex(vmf.MapError, "confirmed dead owner"):
+                        workspace.recover_lock(self.project, state["revision"])
+                    self.assertTrue(path.exists())
+
     def test_parsed_pages_reuse_work_and_detect_same_stat_external_edits(self):
         self.project.create("map.vmf", "kz-room")
         # Fresh Project avoids the view created by create().
@@ -583,9 +601,11 @@ class PerformanceRecoveryTests(unittest.TestCase):
             capture_output=True,
             text=True,
             timeout=30,
+            env={**os.environ, "PYTHONIOENCODING": "cp1252:strict"},
         )
         self.assertEqual(full.returncode, 0, full.stderr)
         self.assertNotIn("response", json.loads(full.stdout)["data"])
+        self.assertIn("\u6c34", json.loads(full.stdout)["data"]["source"])
         import anyio
         from mcp import ClientSession, StdioServerParameters
         from mcp.client.stdio import stdio_client

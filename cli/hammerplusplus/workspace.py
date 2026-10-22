@@ -502,26 +502,11 @@ def lock_status(project):
         pid = int(owner["pid"])
         if pid <= 0:
             raise ValueError
-        if os.name == "nt":
-            import ctypes
+        from .timeline import alive as process_alive
 
-            kernel = ctypes.WinDLL("kernel32", use_last_error=True)
-            kernel.OpenProcess.restype = ctypes.c_void_p
-            handle = kernel.OpenProcess(0x1000, False, pid)
-            if handle:
-                kernel.CloseHandle.argtypes = [ctypes.c_void_p]
-                kernel.CloseHandle(handle)
-                alive = True
-            else:
-                alive = False if ctypes.get_last_error() == 87 else None
-        else:
-            try:
-                os.kill(pid, 0)
-                alive = True
-            except ProcessLookupError:
-                alive = False
-            except PermissionError:
-                alive = None
+        # An exited Windows process can remain openable while another process
+        # retains a handle. Use the same exit-code check as reconciliation.
+        alive = process_alive(pid)
     except (ValueError, KeyError, TypeError):
         owner = {}
         alive = None
