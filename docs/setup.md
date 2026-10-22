@@ -6,6 +6,11 @@ environment, persistent MCP registration and mapping skills. The agent runs
 Hammer++ needs compatible legacy CS:GO engine DLLs and `csgo/gameinfo.txt`;
 CS2 files cannot replace them. Use Hammer++ CS:GO build 8864.
 
+Keep map workspaces outside the checkout. From the checkout, pass
+`--workspace ../Mapwright-workspace` to `setup_agent.py` and `mapwright`.
+Without that option, setup uses the checkout. Keep research notes, corpus data,
+captures and investigation reports in that workspace or ignored `.local/`.
+
 ## Fresh-machine prerequisites
 
 The agent owns installation and verification using the

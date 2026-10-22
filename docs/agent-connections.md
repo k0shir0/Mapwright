@@ -6,17 +6,17 @@ resolve paths, install the local Python environment, register the server,
 install both skills with bundled guides, and verify stdio MCP. No hand-written
 configuration or manually copied skill links are needed.
 
-From the checkout, this applies project setup for Codex:
+From the checkout, this applies project setup for Codex in a separate workspace:
 
 ```powershell
-python scripts/setup_agent.py --client codex --yes
+python scripts/setup_agent.py --client codex --workspace ../Mapwright-workspace --yes
 ```
 
 Other client IDs are `claude`, `opencode`, `antigravity`, `pi`, and `hermes`.
 Hermes uses an active profile rather than a project MCP file:
 
 ```powershell
-python scripts/setup_agent.py --client hermes --scope user --yes
+python scripts/setup_agent.py --client hermes --scope user --workspace ../Mapwright-workspace --yes
 ```
 
 Without `--yes`, setup prints a read-only plan. Repeat `--client` to select
@@ -24,7 +24,8 @@ several clients; `--client auto` detects installed clients and reports Hermes
 as skipped when project scope was requested. `--scope user`
 registers across projects. `--home` selects an isolated home and ignores
 environment profile overrides. `--workspace` selects the map workspace and
-project configuration root. `--help` describes every flag.
+project configuration root; prefer a location outside the checkout. Omitting
+`--workspace` uses the checkout. `--help` describes every flag.
 
 Setup writes the absolute installed executable and workspace. Transport is
 local stdio; no account, hosted endpoint, Node, or REA is required
