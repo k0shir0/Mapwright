@@ -156,9 +156,18 @@ def block(name: str, properties: dict[str, Any], children: str = "") -> str:
 
 
 def replace(text: str, changes: list[tuple[int, int, str]]) -> str:
-    for start, end, value in sorted(changes, reverse=True):
-        text = text[:start] + value + text[end:]
-    return text
+    ordered = sorted(changes)
+    if any(a[1] > b[0] for a, b in zip(ordered, ordered[1:])):
+        # Preserve historical semantics for callers supplying overlapping spans.
+        for start, end, value in sorted(changes, reverse=True):
+            text = text[:start] + value + text[end:]
+        return text
+    pieces, cursor = [], 0
+    for start, end, value in ordered:
+        pieces.extend((text[cursor:start], value))
+        cursor = end
+    pieces.append(text[cursor:])
+    return "".join(pieces)
 
 
 def insert(text: str, parent: Node, addition: str) -> str:
@@ -226,8 +235,16 @@ def new_map() -> str:
     )
 
 
+def id_index(root: Node) -> dict[int, list[Node]]:
+    result = {}
+    for node in root.walk():
+        if node.value is None and node.get("id").isdecimal():
+            result.setdefault(int(node.get("id")), []).append(node)
+    return result
+
+
 def find_id(
-    root: Node, object_id: int, kind: str | None = None, *, allowed=None
+    root: Node, object_id: int, kind: str | None = None, *, allowed=None, index=None
 ) -> Node:
     if isinstance(object_id, bool) or not isinstance(object_id, int):
         raise MapError("id must be an integer")
@@ -238,7 +255,7 @@ def find_id(
         kinds = {kind}
     matches = [
         n
-        for n in root.walk()
+        for n in (root.walk() if index is None else index.get(object_id, []))
         if n.value is None
         and n.key in kinds
         and n.get("id").isdecimal()
@@ -317,7 +334,7 @@ def make_box(
 
 
 def mutate(
-    text: str, operation: dict, *, _root: Node | None = None
+    text: str, operation: dict, *, _root: Node | None = None, _index=None, _changes=None
 ) -> tuple[str, dict]:
     if not isinstance(operation, dict):
         raise MapError("Each operation must be an object")
@@ -455,7 +472,9 @@ def mutate(
             else ("world", "entity", "solid", "side")
         )
     )
-    node = find_id(root, operation["id"], operation.get("kind"), allowed=allowed)
+    node = find_id(
+        root, operation["id"], operation.get("kind"), allowed=allowed, index=_index
+    )
     if op == "set_properties":
         props = operation["properties"]
         if (
@@ -562,6 +581,9 @@ def mutate(
             )
     if not changes:
         raise MapError("Object has no translatable geometry or origin")
+    if _changes is not None:
+        _changes.extend(changes)
+        return text, {"op": op, "ids": [operation["id"]]}
     return replace(text, changes), {"op": op, "ids": [operation["id"]]}
 
 
@@ -572,22 +594,22 @@ def mutate_many(text: str, operations: list[dict]) -> tuple[str, list[dict]]:
         isinstance(op, dict) and op.get("op") == "translate" for op in operations
     ):
         root = parse(text)
+        index = id_index(root)
         nodes = [
-            find_id(root, op.get("id"), op.get("kind"), allowed=("solid", "entity"))
+            find_id(
+                root,
+                op.get("id"),
+                op.get("kind"),
+                allowed=("solid", "entity"),
+                index=index,
+            )
             for op in operations
         ]
         ordered = sorted(nodes, key=lambda n: n.start)
         if all(a.end <= b.start for a, b in zip(ordered, ordered[1:])):
             changes, results = [], []
-            for node, op in zip(nodes, operations):
-                updated, result = mutate(text, op, _root=root)
-                changes.append(
-                    (
-                        node.start,
-                        node.end,
-                        updated[node.start : node.end + len(updated) - len(text)],
-                    )
-                )
+            for op in operations:
+                _, result = mutate(text, op, _root=root, _index=index, _changes=changes)
                 results.append(result)
             return replace(text, changes), results
     results = []

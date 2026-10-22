@@ -82,131 +82,66 @@ scope isolation, verification, client reload fallback and rollback requirements.
 Linked guides are loaded on demand; bundling them does not require reading all of
 them into every task's context.
 
-## Remaining findings, in recommended order
+## Follow-up implementation
 
-### R1 — P2: case-sensitive maps share a case-folded undo journal
+The portable follow-up resolves the journal collision and implements the concrete
+scaling changes below. The original P2 recommendations included optional larger
+redesigns; those are distinguished from the fixes and measurements here.
 
-[`Project.journal_path`](../cli/hammerplusplus/project.py#L376) case-folds paths
-on every platform. On Linux, distinct `A.vmf` and `a.vmf` resolve to the same
-journal. Reproduced by comparing the two journal paths. Revision guards often
-turn this into an undo refusal, but independent per-map histories are not assured.
+| Item | Implemented behavior | Evidence and limits |
+| --- | --- | --- |
+| R1: journal identity | Versioned exact-spelling keys use filesystem resolution and actual aliases. Migrate recorded owners or unique path/revision matches; retain ambiguous journals with a diagnostic. Keep original entries and resumable migration markers. Every new undo/redo state records its path. | Case-distinct edits, independent undo/redo, timeline checkout, alias handling, fieldless/explicit legacy ownership, interruptions on both sides of publication and external-edit refusal. Case-sensitive tests skip when the filesystem aliases the names. |
+| R2: response context | Source/artifact transport defaults are 8,000 units; history is paged with a history-revision guard. Oversized results become explicit bounded summaries linked to immutable, checksummed, byte-pageable full evidence. `response_mode=full` preserves access to original result shapes. | Real installed CLI and stdio MCP verify equivalent text/structured results and reconstruct all evidence. Preserve `valid`, `complete`, unsupported counts, revisions, warnings/errors and recovery IDs. A summary does not make source complete. Direct Python `Project.source()` keeps its previous default for compatibility. |
+| R3: durable I/O | Validate after recording an attempt and before tracking saved files. Reuse one request-local SQLite connection, preserve nested transaction boundaries and FULL synchronization, and batch exported-event bookkeeping. Filter selected paths inside version reconstruction as well as final output. | Existing crash/concurrency and future-history tests pass. Invalid requests retain addressable failed receipts without snapshots. A 100-file restore still commits 207 durable transactions; no durability tradeoff or automatic blob expiry. |
+| R4: repeated paging work | Content-hash-keyed decoded text, parsed object/typed-ID indexes and complete reference-search results use bounded process-local LRUs. Every read checks actual bytes, including same-size/same-mtime external edits. | Entire page sequences reuse parsing/search work. Accounted cache budgets are 8 MiB decoded, 32 MiB views, 8 MiB searches, 16 MiB FGD; each also has a 32-entry cap. Oversized entries bypass caching. Source hashing and exact directory/artifact enumeration still perform I/O; no claim that pagination eliminates those costs. |
+| R5: edit/KZ loops | Collect independent translation spans and reconstruct once. Ordered nonoverlapping replacements use one join; overlapping/mixed edits keep historical sequential behavior. Analysis builds owner-volume and typed object/solid/side indexes once. | Batched output matches a sequential source oracle, including unknown blocks/duplicate keys. Existing geometry, encoding, hidden/unsupported and KZ checks pass. Preserve output order, typed namespaces and the 1,000-box whole-map headhitter guard. |
+| R6: references/catalogs | Use identity sets plus ordered linked selections and a source-span sweep to eliminate contained selections, including parents discovered through links. Cache merged FGDs by ordered configuration and checksums of every recursively parsed include. | Cycles, linked parents, typed IDs, GOKZ names, face remapping, external-reference warnings, conflicts and dry runs have regression coverage. Content changes, deleted includes and reordered/configured FGDs invalidate reuse. Asset filesystem/VPK discovery remains fresh; no stale mount cache was introduced. |
+| R7: streams | Hash downloads incrementally and validate before exclusive cache publication. Stream BSP/NAV archive members, readback and final hashing through temporary files; publish only verified packages. Append only the PAK lump via streamed copy and patch its header entry. BSP/NAV receipt hashing is incremental. | Corrupt/interrupted streams and changed/existing outputs leave no partial publication. Existing PAK-only byte/offset and dependency regressions pass. Synthetic package peak Python memory is measured below. srctools dependency analysis/PAK internals can still retain asset data; no constant-memory claim for native packing. |
+| R8: native queue | New brokers advertise a pending directory; completed requests move to the addressable receipt directory after response publication. Discovery recovers the response/archive interruption gap without replaying a completed mutation. New clients retain the root-queue protocol for existing old brokers. Expiry/secret guards remain; a released completion event no longer ends the broker. | Portable tests cover discovery, archival, expiry and session ownership guards. Actual event/PID/desktop/editor behavior still needs the opt-in Windows lane. Immutable runtime caching remains a separate, unmeasured proposal; private mutable settings and existing idle/capture safeguards remain. |
 
-Use platform-appropriate identity and design migration for existing journals
-before changing hashes. Add independent edit/undo tests for case-distinct paths
-on a case-sensitive filesystem. This is **not fixed** by the recovery changes above.
+### Portable measurements
 
-### R2 — P2: default responses still have substantial context costs
+Compared against the initial implementation commit `bccc52b` in this PR, using
+Linux/Python 3.12.14, MCP 1.30.0 and srctools 2.7.0. These are controlled synthetic
+workloads on this host, not native-editor or production latency guarantees.
 
-[`Project.source`](../cli/hammerplusplus/project.py#L167) and
-[`read_artifact`](../cli/hammerplusplus/workspace.py#L209) default to 100,000
-characters/bytes. An otherwise ordinary read can consume much of an agent's
-context. The skill now requests 8,000-unit pages; API defaults remain unchanged.
+| Workload | Initial PR implementation | Follow-up |
+| --- | ---: | ---: |
+| Restore 100 six-byte files: SQLite connections | 521 | 1 |
+| Same restore: durable COMMIT statements | 207 | 207 |
+| Translate 500 independent entities: median of 3 | 727.410 ms | 20.742 ms |
+| Inspect 501 objects, all 26 pages: median of 3 | 298.095 ms | 36.656 ms |
+| Parses per complete inspect sequence | 26 | 1 |
+| Copy 500 cyclic linked entities, dry run: median of 3 | 85.658 ms | 62.912 ms |
+| Selected path from 100,000 versions: median of 3 | 165.905 ms | 3.615 ms |
+| Inspect world with 200,000-character property: compact result bytes | 400,512 | 829 plus full-evidence artifact |
+| Package two 24 MiB files: peak traced Python allocations | 106,434,911 bytes | 3,289,172 bytes |
 
-Several responses have no useful content budget: `inspect_object` includes a full
-object source span, `map_history` returns all entries, `inspect_checkpoint`
-duplicates file hashes across receipt/current/changes, KZ results return all
-findings, and compile receipts include every embedded dependency and 64 BSP lump
-records. `operation_log` is paginated but can include complete small argument
-objects in each event. Entry limits alone do not bound serialized bytes.
+Translation hashes, copied destination revisions and selected-path results match
+across both implementations. Package readback verifies exact members/hashes. Package
+wall time in this single memory probe was 304 ms before and 355 ms after: the goal
+was bounded memory and verified publication, not a packaging speedup. The single
+restore sample was 225 ms before and 164 ms after; connection/commit counts are the
+reliable structural evidence, not a wall-time guarantee. `tracemalloc` measures
+Python allocations during packaging, excluding precreated inputs and native RSS.
 
-Add summary/detail modes and explicit pagination or bounded artifact links. Always
-retain failure status, revision, finding counts, incomplete/unsupported indicators,
-recovery IDs and a route to full evidence. Do not silently truncate findings or
-drop compatibility text without checking supported clients.
+Reproduce with the installed environment:
 
-### R3 — P2: permanent history makes every read a write workload
+```sh
+python scripts/benchmark_portable.py
+python scripts/benchmark_portable.py --source /path/to/checkout-at-bccc52b
+```
 
-[`timeline.run`](../cli/hammerplusplus/timeline.py#L861) creates a durable action,
-preparation event and final event even for metadata reads. Constructor/schema
-checks, event exports and many short SQLite connections add overhead; finalization
-batching removes only part of it. `store_file` copies/hashes to a temporary file
-and verifies an existing blob on deduplication. This repeats for tracked before
-and after states, including no-op or rejected mutations. Tracking currently
-precedes argument validation, so invalid requests may do unnecessary snapshot I/O.
+The script creates isolated temporary workspaces and fixtures, includes entire
+page sequences, retains three timing samples per loop workload and prints hashes,
+counts and memory evidence. It does not exercise Hammer++, compilation or rendering.
 
-An empty-map sample of 30 direct and 30 dispatched inspections measured medians
-of about 0.13 ms and 1.8 ms respectively. This demonstrates the durable-receipt
-cost on a tiny map, not a universal slowdown ratio. A restore of 100 six-byte files
-used 621 connections upstream and 521 after batching (16.1% fewer). Single-run
-wall times were about 157 ms upstream and 151–163 ms revised; **no reliable wall
-time speedup is claimed**.
-
-Next: validate schemas before expensive tracking while retaining failed-request
-receipts, reuse request-local DB connections, batch export bookkeeping, and
-measure representative maps/disks. Preserve `synchronous=FULL`, checksum checks
-and the existing permanent-history contract unless deliberately redesigned.
-`Timeline.state()` also reconstructs ancestry/windowed file versions before its
-final path filter; push selected-path filtering into that work and examine query
-plans on long histories. Retained blobs/events have no expiry: provide disk usage
-visibility and an explicit reference-aware maintenance design rather than deleting
-history implicitly.
-
-### R4 — P2: paging often repeats whole-map work
-
-Each source page reads/decodes/hashes the entire VMF. Each inspect/find page parses
-the entire source; file/artifact searches build complete collections before
-slicing. Small output pages reduce context but do not proportionally reduce CPU,
-RAM or disk reads. Permanent artifact growth makes repeated directory scans more
-expensive over time.
-
-Consider revision-keyed parsed indexes, stable cursors and streamed/indexed
-artifact listings. Cache reuse must detect external edits, encoding changes and
-workspace/mount changes; optimistic revisions must remain authoritative.
-
-### R5 — P2: edit and KZ inner loops still scale poorly
-
-[`vmf.mutate_many`](../cli/hammerplusplus/vmf.py#L568) saves parsing for independent
-translations, but calls `mutate` on the full text for every item and reconstructs
-full strings repeatedly. General mixed batches reparse per operation. The
-1,000-operation/64 MiB limits do not imply a small memory or CPU budget.
-
-In [`kz.py`](../cli/hammerplusplus/kz.py), `volumes()` scans all solids repeatedly,
-`select()` walks the tree and scans solids for each route selector, and several
-checks nest entity/ground scans. The whole-map headhitter check already has a
-1,000-box guard and is excluded from default audit; retain that safeguard.
-
-Build owner/typed-ID indexes once per `Analysis`. For independent edits collect
-span changes directly and reconstruct once, preserving untouched bytes, duplicate
-keys and sequential semantics for overlapping or mixed edits.
-
-### R6 — P2: reference selection and catalogs repeat expensive work
-
-[`reference.copy_objects`](../cli/hammerplusplus/reference.py#L330) uses list
-membership/deep dataclass equality while growing linked selections and removes
-contained selections with nested scans. Cyclic entity links terminate because
-already-selected entities are not appended again, but large selections can still
-perform quadratic work. Use identity/typed-ID sets alongside ordered lists.
-
-FGD parsing/base merging and filesystem/VPK indexing repeat per catalog query.
-Cache with explicit invalidation for include files, ordered addon FGDs, VPKs and
-gameinfo mounts. Reference spatial bounds use plane-point extrema; they are not
-a proof of arbitrary sloped brush extent. Resolve ambiguous selections using
-source/editor evidence, as the skill requires.
-
-### R7 — P2: packaging and downloads can duplicate large payloads in memory
-
-[`delivery.py`](../cli/hammerplusplus/delivery.py) holds whole BSP/pak/archive
-buffers and dependency contents; `package_map()` retains BSP/NAV bytes plus ZIP
-buffers and verification reads. Native setup downloads use `response.read()` and
-then re-read cached archives for hashing. Existing file limits do not bound the
-combined peak memory of all copies.
-
-Stream downloads and ZIP members through confined temporary files with incremental
-hashes, exclusive publication and readback verification. Preserve the existing
-PAK-only BSP update: a generic BSP round-trip can change absolute game-lump offsets.
-
-### R8 — P2: native request discovery grows with session history
-
-The broker scans/sorts all `request-*.json` files on every wake and skips those
-with responses. A long-lived session therefore revisits completed requests. Keep
-pending/completed queues or an index while retaining addressable evidence.
-Private runtime preparation also walks/copies a tool tree per session; a carefully
-versioned immutable cache could reduce repeated startup work.
-
-Static positives: idle IPC waits on Windows events, the editor has an idle CPU
-cap, immutable runtime files are hardlinked where possible, and viewport capture
-uses a bounded disposable worker. Actual startup, GPU readback, memory/CPU and
-cleanup behavior still require the opt-in Windows lane.
+The explicit compatibility switch and pagination guards increase compact 58-tool
+advertisement JSON from 51,498 to 60,948 bytes (same SDK-object method described
+above). This is a measured tradeoff for discoverable result semantics. Tool profiles
+or client-side tool search remain an optional separate redesign. Skill measurements
+above describe the initial review; the mapping skill now also documents bounded
+result evidence and source pagination guards.
 
 ## Dead code and circularity
 
@@ -231,29 +166,26 @@ deleted solely because new requests use SQLite.
 
 ## Validation and limits
 
-- Baseline: 140 tests, passing with three skips.
-- Revised: 147 tests, passing with the same three skips, including actual stdio
-  MCP transport, every advertised tool's portable/fixture contract, rejected
-  requests, concurrent metadata calls and real subprocess-crash recovery tests.
-- Seven new regression tests cover checkpoint artifact scopes, four installer
-  rollback/interruption cases, oversized validation errors and late compiler log
-  failures. Each reproduced the old defect before the corresponding fix.
-- `pip check`, compileall, Black 26.3.1, Ruff F checks, Vulture at 80% confidence,
-  `git diff --check` and the installed CLI demo pass.
-- Tested here on Linux/Python 3.12.14, MCP 1.29.0 and srctools 2.7.0. CI's Windows
-  and Python 3.11/3.13 combinations were not run locally.
-- Skips: Windows extended-path behavior and two opt-in actual native toolchain
-  scenarios. Compiler/native fixtures test contracts, not real Hammer++, Source
-  compilation, rendering, GOKZ physics or gameplay. No such native claim is made.
-- This sandbox required its supported network-enabled execution mode for asyncio
-  stdio tests/formatter operation. Restricted-mode hangs were environment failures;
-  the completed test results above are from the working mode.
+The initial review ran 147 tests (144 passed, three skipped). The follow-up ran
+166 tests: 163 passed and three skipped on Linux/Python 3.12.14. The installed CLI,
+real stdio MCP, crash/concurrency regressions, dependency validation, compileall,
+pinned Black, Ruff F checks, Vulture at 80% confidence, installed demo and whitespace
+checks pass. See the PR for the GitHub Linux/Windows matrix results.
 
-Reproduce portable validation with the README/CI commands and installed CLI on
-PATH. For dead-code checks, additionally install the development-only `ruff` and
-`vulture` tools and run `ruff check cli scripts --select F` and
-`vulture cli scripts --min-confidence 80`; they are not new runtime dependencies.
+Linux tests cannot establish real Hammer++, compiler, GPU, GOKZ movement or replay
+behavior. The Windows extended-path check and two opt-in actual native scenarios
+require their corresponding environments. Native fixtures establish contracts only.
+Use a logged-in Windows session with an owned legacy CS:GO runtime/content,
+WinSta0/private-desktop access and a verified renderer DLL profile before claiming
+native readiness. Follow [setup](setup.md), [recovery](recovery.md) and the
+[verification scope](kz-mapping.md#verification-scope); configure
+`MAPWRIGHT_NATIVE_E2E_CONFIG` for the real native MCP tests and run the relevant
+`scripts/verify_native_session.py`, `scripts/verify_kz.py` and
+`scripts/verify_backend.py` with the actual workspace. Inspect captures and saved
+receipts, check save/reopen and cleanup, and close owned sessions.
 
-Priority for the next iteration: resolve the case-sensitive journal migration,
-add bounded result modes, then profile long-history reconstruction and large-map
-edits/catalogs before changing durability or native session behavior.
+Further optional work remains: client tool search/profiles, indexed artifact/file
+listing, persistent/reference-aware storage maintenance, spatial acceleration for
+remaining nested geometry checks, mount-aware asset catalog caching and immutable
+native-runtime caching. These need separate measurements and invalidation/recovery
+designs; this change does not silently delete retained evidence or weaken checksums.

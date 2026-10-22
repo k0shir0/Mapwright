@@ -252,6 +252,11 @@ def serve(project: Project, config: dict):
 
 
 KZ_GUIDE = """Read doctor and inspect_map. New KZ maps can use create_map template=kz-room.
+Source/artifact pages default to 8000 characters/bytes. Large results carry
+response.truncated, totals and an immutable result artifact; read every evidence
+page or request response_mode=full. Preserve valid/complete and unsupported counts.
+Pin expected_revision across source pages and expected_history_revision across
+map_history pages. Never replace a map using incomplete source.
 Inspect exact object IDs/kinds and the current revision. Use map_* tools for a single
 edit or edit_map for atomic batches, with expected_revision and optional dry_run.
 set_properties null removes a key; add_entity properties cannot be null.

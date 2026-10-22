@@ -164,6 +164,13 @@ def parser():
                 name, **{**kwargs, "help": description, "description": description}
             )
             command_parser.tool_schema = tool.get("inputSchema", {})
+            if tool:
+                command_parser.add_argument(
+                    "--response-mode",
+                    choices=["bounded", "full"],
+                    default=argparse.SUPPRESS,
+                    help="Bound large results with evidence links, or return the full result",
+                )
             return command_parser
 
     commands = Commands()
@@ -174,7 +181,8 @@ def parser():
     source = commands.add_parser("source")
     source.add_argument("path")
     source.add_argument("--offset", type=int, default=0)
-    source.add_argument("--limit", type=int, default=100000)
+    source.add_argument("--limit", type=int, default=8000)
+    source.add_argument("--expect", default=argparse.SUPPRESS)
     delete = commands.add_parser("delete-file")
     delete.add_argument("path")
     delete.add_argument("--expect", required=True)
@@ -219,6 +227,10 @@ def parser():
         sub.add_argument("path")
         if command == "editor-open":
             sub.add_argument("--timeout", type=int, default=30)
+        if command == "history":
+            sub.add_argument("--offset", type=int, default=0)
+            sub.add_argument("--limit", type=int, default=100)
+            sub.add_argument("--expected-history-revision", default=argparse.SUPPRESS)
     for command in ("editor-save", "editor-close"):
         sub = commands.add_parser(command)
         sub.add_argument("pid", type=int)
@@ -278,7 +290,7 @@ def parser():
     sub = commands.add_parser("artifact")
     sub.add_argument("path")
     sub.add_argument("--offset", type=int, default=0)
-    sub.add_argument("--limit", type=int, default=100000)
+    sub.add_argument("--limit", type=int, default=8000)
     sub = commands.add_parser("checkpoint")
     sub.add_argument("paths", nargs="+")
     sub.add_argument("--label", default="")
@@ -395,6 +407,7 @@ def main(argv=None):
     try:
         args = vars(parser().parse_args(argv))
         compact = args.pop("json")
+        response_mode = args.pop("response_mode", None)
         workspace, config_name, command = (
             args.pop("workspace"),
             args.pop("config"),
@@ -453,6 +466,8 @@ def main(argv=None):
                 args["expected_revision"] = args.pop("expect")
             if "ops" in args:
                 args["operations"] = read_json(args.pop("ops"))
+            if response_mode is not None:
+                args["response_mode"] = response_mode
             data = execute(project, config, action, args)
             result = {"ok": True, "data": data}
             check_failed = (

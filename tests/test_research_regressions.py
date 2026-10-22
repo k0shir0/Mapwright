@@ -106,7 +106,11 @@ class ResearchRegressions(unittest.TestCase):
             self.project,
             {},
             "kz_check_bhop",
-            {"path": "map.vmf", "route": [{"id": solid, "kind": "solid"}] * 103},
+            {
+                "path": "map.vmf",
+                "route": [{"id": solid, "kind": "solid"}] * 103,
+                "response_mode": "full",
+            },
         )
         self.assertEqual(len(result["route_measurements"]), 102)
 
