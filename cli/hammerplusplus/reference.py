@@ -224,8 +224,8 @@ def search(
     offset: int = 0,
     limit: int = 100,
 ) -> dict:
-    _, data, text, _ = project.read(path)
-    root = vmf.parse(text)
+    _, data, text, _, view = project.view(path)
+    root = view["root"]
     if (minimum is None) != (maximum is None):
         raise vmf.MapError("Spatial filtering requires both minimum and maximum")
     lo = vmf.vector(minimum) if minimum is not None else None
@@ -233,6 +233,21 @@ def search(
     if lo and not all(a <= b for a, b in zip(lo, hi)):
         raise vmf.MapError("Invalid selection bounds")
     tokens = query.casefold().split()
+    cache_key = (digest(data), query, tuple(lo or []), tuple(hi or []), kind)
+    matches = project._searches.get(cache_key)
+    if matches is None:
+        matches = search_objects(root, text, tokens, lo, hi, kind)
+        project._searches.put(cache_key, matches)
+    return {
+        "revision": digest(data),
+        "total": len(matches),
+        "objects": matches[offset : offset + limit],
+        "next_offset": offset + limit if offset + limit < len(matches) else None,
+        "selection_help": "Interpret the user description using these names, materials, spatial bounds and object sources; do not guess ambiguous unnamed geometry.",
+    }
+
+
+def search_objects(root, text, tokens, lo, hi, kind):
     matches = []
     for node in objects(root):
         if kind and node.key != kind:
@@ -266,13 +281,7 @@ def search(
                 ),
             }
         )
-    return {
-        "revision": digest(data),
-        "total": len(matches),
-        "objects": matches[offset : offset + limit],
-        "next_offset": offset + limit if offset + limit < len(matches) else None,
-        "selection_help": "Interpret the user description using these names, materials, spatial bounds and object sources; do not guess ambiguous unnamed geometry.",
-    }
+    return matches
 
 
 def translated(source: str, delta: list[float]) -> str:
@@ -349,20 +358,41 @@ def copy_objects(
         raise vmf.MapError("Select at least one entity or solid")
     src_root, dst_root = vmf.parse(src_text), vmf.parse(dst_text)
     chosen = []
+    chosen_ids = set()
+    index = vmf.id_index(src_root)
     for selected in selection:
         node = vmf.find_id(
-            src_root, selected["id"], selected["kind"], allowed=("solid", "entity")
+            src_root,
+            selected["id"],
+            selected["kind"],
+            allowed=("solid", "entity"),
+            index=index,
         )
-        if node not in chosen:
+        if id(node) not in chosen_ids:
             chosen.append(node)
+            chosen_ids.add(id(node))
+
     # Copy an entity once if its child brush was explicitly selected too.
-    chosen = [
-        n
-        for n in chosen
-        if not any(
-            p.key == "entity" and p.start < n.start < n.end < p.end for p in chosen
+    def remove_contained(nodes):
+        entities = sorted(
+            (n for n in nodes if n.key == "entity"), key=lambda n: n.start
         )
-    ]
+        contained, cursor = set(), 0
+        for node in sorted(nodes, key=lambda n: n.start):
+            while cursor < len(entities) and entities[cursor].end <= node.start:
+                cursor += 1
+            if (
+                cursor < len(entities)
+                and entities[cursor].start
+                < node.start
+                < node.end
+                < entities[cursor].end
+            ):
+                contained.add(id(node))
+        return [n for n in nodes if id(n) not in contained]
+
+    chosen = remove_contained(chosen)
+    chosen_ids = {id(n) for n in chosen}
     links = {
         "target",
         "parentname",
@@ -454,12 +484,14 @@ def copy_objects(
         for node in chosen:
             for name in references(node):
                 for ent in named.get(name.casefold(), []):
-                    if ent not in chosen:
+                    if id(ent) not in chosen_ids:
                         chosen.append(ent)
+                        chosen_ids.add(id(ent))
             if len(chosen) > 10000:
                 raise vmf.MapError(
                     "Linked selection exceeds 10000 objects; refine the selection"
                 )
+    chosen = remove_contained(chosen)
     shift = vmf.vector(delta or [0, 0, 0])
     prefix = prefix or "ref_" + uuid.uuid4().hex[:10] + "_"
     if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", prefix):

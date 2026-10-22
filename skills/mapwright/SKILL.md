@@ -19,6 +19,8 @@ the brief/config. Read guides only as needed: [KZ](../../docs/kz-mapping.md),
 
 1. Inspect revision and typed IDs; qualify reused IDs with `kind`. Use small pages
    (`limit=20` objects, `limit=8000` source/artifacts); follow `next_offset`.
+   Check `response.truncated` and read its immutable evidence artifact; `response_mode=full`
+   returns full detail. Pin `expected_revision` across source pages.
    `object` exposes properties, outputs, sides/source. New KZ map:
    `new PATH --template kz-room`. Resolve fields/materials with `entities`/`assets`;
    preserve exact GOKZ names from the KZ contract.

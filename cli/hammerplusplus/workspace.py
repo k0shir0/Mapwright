@@ -140,6 +140,7 @@ def operations(project, offset=0, limit=100):
 
 
 ARTIFACTS = {
+    "results",
     "history",
     "snapshots",
     "trash",
@@ -206,7 +207,7 @@ def artifacts(project, category="", offset=0, limit=100):
     }
 
 
-def read_artifact(project, path, offset=0, limit=100000):
+def read_artifact(project, path, offset=0, limit=8000):
     source = artifact_path(project, path)
     # Read bounded bytes, including binary BSPs/PNGs as base64 instead of decoding blindly.
     with source.open("rb") as stream:

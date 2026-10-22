@@ -12,6 +12,7 @@ import zipfile
 
 from cli.hammerplusplus import vmf
 from cli.hammerplusplus.project import Project, atomic_write, decode
+from cli.hammerplusplus.streams import file_digest, publish_stream
 
 ARCHIVES = {
     "hammerplusplus_csgo_build8864.zip": (
@@ -42,7 +43,7 @@ def install_kz_fgd(project, editor):
     cached = project.confined(".local/downloads/kz_mapping_api-3.6.3.fgd")
     if not cached.exists():
         with urllib.request.urlopen(KZ_FGD[0], timeout=30) as response:
-            atomic_write(cached, response.read(), exclusive=True)
+            publish_stream(cached, response, expected=KZ_FGD[1], exclusive=True)
     raw = cached.read_bytes()
     if hashlib.sha256(raw).hexdigest() != KZ_FGD[1]:
         raise ValueError(
@@ -113,8 +114,8 @@ def archive(project, name, folder, prefixes=None):
     cached = project.confined(".local/downloads/" + name)
     if not cached.exists():
         with urllib.request.urlopen(url, timeout=120) as response:
-            atomic_write(cached, response.read(), exclusive=True)
-    if hashlib.sha256(cached.read_bytes()).hexdigest() != expected:
+            publish_stream(cached, response, expected=expected, exclusive=True)
+    if file_digest(cached) != expected:
         raise ValueError(
             f"{name} checksum mismatch; review upstream release changes before updating the pinned hash"
         )

@@ -143,6 +143,16 @@ class Analysis:
                     walk(n, current)
 
         walk(self.root)
+        self.ids = vmf.id_index(self.root)
+        self.owner_volumes = defaultdict(list)
+        self.solid_rows = {}
+        self.side_rows = {}
+        for row in self.solids:
+            self.solid_rows[id(row["node"])] = row
+            for side in row["node"].blocks("side"):
+                self.side_rows[id(side)] = row
+            if row["box"]:
+                self.owner_volumes[id(row["owner"])].append(row["box"])
         self.named = defaultdict(list)
         for e in self.entities:
             if e.get("targetname"):
@@ -170,7 +180,7 @@ class Analysis:
         )
 
     def volumes(self, entity):
-        return [s["box"] for s in self.solids if s["owner"] is entity and s["box"]]
+        return list(self.owner_volumes.get(id(entity), []))
 
     def point(self, e):
         try:
@@ -578,17 +588,17 @@ class Analysis:
         }
 
     def select(self, selector):
-        node = vmf.find_id(self.root, selector["id"], selector.get("kind", "solid"))
+        node = vmf.find_id(
+            self.root, selector["id"], selector.get("kind", "solid"), index=self.ids
+        )
         if node.key == "side":
-            rows = [
-                s
-                for s in self.solids
-                if any(n is node for n in s["node"].blocks("side"))
-            ]
+            row = self.side_rows.get(id(node))
+            rows = [row] if row is not None else []
             if not rows or rows[0]["box"] is None or rows[0]["box"]["top"] is not node:
                 raise vmf.MapError("Select a top face of an axis-aligned box")
         else:
-            rows = [s for s in self.solids if s["node"] is node]
+            row = self.solid_rows.get(id(node))
+            rows = [row] if row is not None else []
         if len(rows) != 1 or rows[0]["box"] is None:
             raise vmf.MapError(
                 "Selected solid must be an active axis-aligned six-face box without displacements"

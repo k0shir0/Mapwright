@@ -281,14 +281,26 @@ class MCPEndToEndTests(unittest.TestCase):
                         )
                         self.assertIn('"16 0 64"', translated["source"])
                         await mutate("map_delete", id=entity_id, kind="entity")
-                        source = await call("read_map_source", path="kz.vmf")
+                        source = await call(
+                            "read_map_source",
+                            path="kz.vmf",
+                            limit=1000000,
+                            response_mode="full",
+                        )
                         replacement = (
                             source["source"]
                             + '\nfuture_extension { "untouched" "retained" }\n'
                         )
                         await mutate("map_replace_source", source=replacement)
                         self.assertEqual(
-                            (await call("read_map_source", path="kz.vmf"))["source"],
+                            (
+                                await call(
+                                    "read_map_source",
+                                    path="kz.vmf",
+                                    limit=1000000,
+                                    response_mode="full",
+                                )
+                            )["source"],
                             replacement,
                         )
                         before_batch = (self.root / "kz.vmf").read_bytes()
@@ -542,11 +554,15 @@ class MCPEndToEndTests(unittest.TestCase):
                         with self.assertRaises(McpError):
                             await client.get_prompt("kz_mapping_workflow", {})
 
-                        logs = await call("operation_log", limit=1000)
+                        logs = await call(
+                            "operation_log", limit=1000, response_mode="full"
+                        )
                         self.assertTrue(
                             any(e["status"] == "failed" for e in logs["events"])
                         )
-                        history = await call("action_history", limit=1000)
+                        history = await call(
+                            "action_history", limit=1000, response_mode="full"
+                        )
                         self.assertTrue(
                             any(
                                 a["tool"] == "not_advertised"

@@ -25,6 +25,35 @@ claims, use the [verification scope](kz-mapping.md#verification-scope).
 
 ## Permanent action timeline
 
+CLI/MCP source and artifact pages default to 8,000 characters/bytes. Source pages
+return `source_complete`; keep the first `revision` as `expected_revision` on later
+pages. Map history defaults to 100 entries and returns `history_revision`;
+use `expected_history_revision` on later pages (`history --expected-history-revision`).
+Restart pagination on a revision conflict. Never replace whole source using an
+incomplete page.
+
+Results larger than 32 KiB of compact ASCII JSON return an explicit
+`response.truncated` summary, collection totals and a checksummed immutable JSON
+artifact under `.hammer-agent/results/`. Status, revision, validity, completeness
+and recovery identifiers remain available. Findings/warnings may be previews:
+inspect `response.omitted_fields` and read **all** `read_artifact` byte pages to
+recover the exact full result. Evidence artifacts are ASCII JSON, so byte pages
+concatenate without splitting UTF-8 characters. Existing arbitrary binary artifacts
+still use base64 when a page is not UTF-8. CLI `--response-mode full` or MCP
+`response_mode=full` returns the original full result. Text and structured MCP
+representations remain equivalent. The 32 KiB budget covers result data; transport
+envelopes add a small overhead. Explicit source/artifact limits remain available.
+
+Map journals now use the filesystem's resolved path spelling. Distinct `A.vmf`
+and `a.vmf` have distinct histories on sensitive filesystems; actual path aliases
+share a journal. Legacy case-folded journals migrate on the next write when their
+recorded owner, or a unique matching path/revision, identifies the map. Original
+entries remain in the legacy journal with a migration marker. Interrupted migration
+resumes, and timeline checkout retains both journal states. An ambiguous or
+unidentified legacy journal produces an error naming the retained evidence; identify
+its owner before manually recovering it. Do not assign shared evidence to a map by
+guessing or discard it to clear an error.
+
 Every shared CLI/MCP tool request receives an action ID before execution,
 including failed/rejected requests and metadata reads. Results include
 `data.timeline` with `action_id`, `head`, `status` and `changed`. Failed calls

@@ -111,7 +111,17 @@ OPERATIONS = {
 def spec(description: str, props: dict, required: list[str], readonly: bool = True):
     return {
         "description": description,
-        "inputSchema": schema(props, required),
+        "inputSchema": schema(
+            {
+                **props,
+                "response_mode": {
+                    "enum": ["bounded", "full"],
+                    "default": "bounded",
+                    "description": "Large results link to immutable evidence; full returns the original result.",
+                },
+            },
+            required,
+        ),
         "readonly": readonly,
     }
 
@@ -123,9 +133,10 @@ TOOLS = {
         [],
     ),
     "read_map_source": spec(
-        "Read revision and VMF source; offset/limit count characters (max 1000000). Follow next_offset before replacing source.",
+        "Read revision and VMF source; default 8000 characters. Follow next_offset with expected_revision before replacing source.",
         {
             "path": MAP,
+            "expected_revision": REVISION,
             "offset": {"type": "integer", "minimum": 0},
             "limit": {"type": "integer", "minimum": 1, "maximum": 1000000},
         },
@@ -276,7 +287,14 @@ TOOLS = {
         False,
     ),
     "map_history": spec(
-        "Read transaction history and undo position.", {"path": MAP}, ["path"]
+        "Read paged transaction history and undo position; pin expected_history_revision across pages.",
+        {
+            "path": MAP,
+            "offset": {"type": "integer", "minimum": 0},
+            "limit": {"type": "integer", "minimum": 1, "maximum": 1000},
+            "expected_history_revision": REVISION,
+        },
+        ["path"],
     ),
     "undo_map": spec(
         "Restore the prior transaction; refuses external map changes.",
@@ -619,7 +637,7 @@ for name, tool in TOOLS.items():
     }
 
 
-def _execute(project: Project, config: dict, action: str, args: dict) -> dict:
+def validate_arguments(action: str, args: dict):
     import json
 
     try:
@@ -640,7 +658,11 @@ def _execute(project: Project, config: dict, action: str, args: dict) -> dict:
         if len(location) > 160:
             location = location[:157] + "..."
         raise MapError(f"Invalid {action} argument at {location}: {reason}") from exc
+
+
+def _execute(project: Project, config: dict, action: str, args: dict) -> dict:
     values = dict(args)
+    values.pop("response_mode", None)
     path = values.pop("path", None)
     if action == "package_map":
         from .delivery import package_map
@@ -705,6 +727,7 @@ def _execute(project: Project, config: dict, action: str, args: dict) -> dict:
     if action == "list_map_files":
         return project.files(**values)
     if action == "read_map_source":
+        values.setdefault("limit", 8000)
         return project.source(path, **values)
     if action == "delete_map_file":
         return project.delete_file(path, **values)
@@ -755,7 +778,7 @@ def _execute(project: Project, config: dict, action: str, args: dict) -> dict:
     if action == "edit_map":
         return project.apply(path, **values)
     if action == "map_history":
-        return project.history(path)
+        return project.history(path, **values)
     if action in ("undo_map", "redo_map"):
         return project.restore(path, values["expected_revision"], action.split("_")[0])
     if action == "compile_map":
@@ -785,4 +808,5 @@ def execute(project: Project, config: dict, action: str, args: dict) -> dict:
         args,
         lambda: _execute(project, config, action, args),
         mutating=mutating,
+        validate=lambda: validate_arguments(action, args),
     )

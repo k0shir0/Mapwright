@@ -133,6 +133,15 @@ class ReferenceTests(unittest.TestCase):
                     "input": "Trigger",
                 }
             )
+        self.edit(
+            {
+                "op": "add_output",
+                "id": second,
+                "event": "OnUser1",
+                "target": "start",
+                "input": "Trigger",
+            }
+        )
         result = self.copy(
             [{"id": first, "kind": "entity"}], prefix="copied_", delta=[16, 0, 0]
         )
@@ -147,6 +156,41 @@ class ReferenceTests(unittest.TestCase):
         self.assertTrue(self.project.validate("destination.vmf")["valid"])
         with self.assertRaisesRegex(vmf.MapError, "collides"):
             self.copy([{"id": first, "kind": "entity"}], prefix="copied_")
+
+    def test_linked_parent_replaces_explicitly_selected_child(self):
+        parent = self.edit(
+            {
+                "op": "add_entity",
+                "classname": "func_detail",
+                "origin": [0, 0, 0],
+                "properties": {"targetname": "owner"},
+            }
+        )["results"][0]["ids"][0]
+        child = self.edit(
+            {
+                "op": "add_box",
+                "min": [0, 0, 0],
+                "max": [16, 16, 16],
+                "parent_id": parent,
+                "parent_kind": "entity",
+            }
+        )["results"][0]["ids"][0]
+        relay = self.edit(
+            {
+                "op": "add_entity",
+                "classname": "logic_relay",
+                "origin": [0, 0, 0],
+                "properties": {"target": "owner"},
+            }
+        )["results"][0]["ids"][0]
+        result = self.copy(
+            [{"id": child, "kind": "solid"}, {"id": relay, "kind": "entity"}],
+            prefix="linked_",
+        )
+        self.assertEqual(
+            [row["source_id"] for row in result["copied"]], [relay, parent]
+        )
+        self.assertEqual(self.project.inspect("destination.vmf")["counts"]["solid"], 7)
 
     def test_external_references_reported_when_links_excluded(self):
         ent = self.edit(

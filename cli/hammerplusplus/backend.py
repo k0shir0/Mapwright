@@ -188,6 +188,8 @@ def require_game(project: Project, config: dict) -> Path:
 
 
 def bsp_info(path: Path) -> dict:
+    from .streams import file_digest
+
     size = path.stat().st_size
     if size < 1036:
         raise BackendError("Compiler did not produce a complete VBSP header")
@@ -223,7 +225,7 @@ def bsp_info(path: Path) -> dict:
         "path": str(path),
         "bytes": size,
         "version": version,
-        "revision": digest(path.read_bytes()),
+        "revision": file_digest(path),
         "lumps": lumps,
     }
 
@@ -340,12 +342,16 @@ def compile_map(
     else:
         assets = {"complete": False, "status": "not_checked", "unresolved": None}
     nav = bsp.with_suffix(".nav")
+    from .streams import file_digest, publish_stream
+
     if not nav.exists():
         source_nav = project.confined(source.with_suffix(".nav"))
-        atomic_write(
-            nav, source_nav.read_bytes() if source_nav.exists() else b"", exclusive=True
-        )
-    nav_data = nav.read_bytes()
+        if source_nav.exists():
+            with source_nav.open("rb") as stream:
+                publish_stream(nav, stream, exclusive=True)
+        else:
+            atomic_write(nav, b"", exclusive=True)
+    nav_size = nav.stat().st_size
     receipt = {
         "source": str(source),
         "source_revision": expected_revision,
@@ -355,10 +361,10 @@ def compile_map(
         "bsp": info,
         "nav": {
             "path": str(nav),
-            "bytes": len(nav_data),
-            "revision": digest(nav_data),
-            "empty": not nav_data,
-            "validation": "empty_placeholder" if not nav_data else "not_parsed",
+            "bytes": nav_size,
+            "revision": file_digest(nav),
+            "empty": not nav_size,
+            "validation": "empty_placeholder" if not nav_size else "not_parsed",
             "pathfinding_verified": False,
         },
         "assets": assets,

@@ -25,6 +25,7 @@ MAX_FILES = 10000
 MAX_BYTES = 128 * 1024 * 1024
 BUFFER = 1024 * 1024
 _active = ContextVar("mapwright_action", default=None)
+_connections = ContextVar("mapwright_connections", default=None)
 
 
 def now():
@@ -233,14 +234,24 @@ class Timeline:
 
     @contextmanager
     def connect(self):
-        db = sqlite3.connect(self.database, timeout=30)
-        db.row_factory = sqlite3.Row
-        db.execute("PRAGMA synchronous=FULL")
+        cache = _connections.get()
+        entry = cache.get(self.database) if cache is not None else None
+        if entry is None:
+            db = sqlite3.connect(self.database, timeout=30)
+            db.row_factory = sqlite3.Row
+            db.execute("PRAGMA synchronous=FULL")
+            entry = [db, 0]
+            if cache is not None:
+                cache[self.database] = entry
+        db, depth = entry
+        entry[1] += 1
         try:
-            with db:
+            with db if depth == 0 else nullcontext():
                 yield db
         finally:
-            db.close()
+            entry[1] -= 1
+            if cache is None:
+                db.close()
 
     def export_events(self):
         # A committed DB event is authoritative if a crash interrupts its export.
@@ -261,11 +272,11 @@ class Timeline:
                 except FileExistsError:
                     if path.read_bytes() != raw:
                         raise MapError("Immutable timeline event checksum mismatch")
-                with self.connect() as db:
-                    db.execute(
-                        "UPDATE events SET exported=1 WHERE sequence=?",
-                        (row["sequence"],),
-                    )
+            with self.connect() as db:
+                db.executemany(
+                    "UPDATE events SET exported=1 WHERE sequence=?",
+                    [(row["sequence"],) for row in rows],
+                )
 
     def event(self, db, action, status, **extra):
         payload = {
@@ -416,11 +427,11 @@ class Timeline:
                 raise MapError("Checkout requires a finalized action ID")
             # Only state-changing actions are parents, so read traffic does not
             # lengthen reconstruction. Baselines record first-managed scope.
-            selected = (
-                ""
-                if names is None
-                else " WHERE p.path IN (" + ",".join("?" for _ in names) + ")"
-            )
+            if names == []:
+                return {}
+            placeholders = ",".join("?" for _ in (names or []))
+            selected = "" if names is None else f" WHERE p.path IN ({placeholders})"
+            versions = "" if names is None else f" AND f.path IN ({placeholders})"
             rows = db.execute(
                 """WITH RECURSIVE ancestry(id,depth) AS (
                      SELECT ?,0 UNION ALL
@@ -430,11 +441,15 @@ class Timeline:
                      SELECT f.path,f.after_hash,
                        row_number() OVER (PARTITION BY f.path ORDER BY t.depth) AS rank
                      FROM files f JOIN ancestry t ON f.action=t.id WHERE f.after_known=1
-                   ) SELECT p.path,
+                   """
+                + versions
+                + """) SELECT p.path,
                      CASE WHEN v.rank=1 THEN v.after_hash ELSE p.baseline END AS revision
                      FROM paths p LEFT JOIN versions v ON v.path=p.path AND v.rank=1
-                     """ + selected + " ORDER BY p.path LIMIT ?",
-                (action_id, *(names or []), MAX_FILES + 1),
+                     """
+                + selected
+                + " ORDER BY p.path LIMIT ?",
+                (action_id, *(names or []), *(names or []), MAX_FILES + 1),
             ).fetchall()
         if len(rows) > MAX_FILES:
             raise MapError("Timeline exceeds 10000 managed files")
@@ -858,12 +873,25 @@ def known_files(project, config, tool, args):
     return [name] if isinstance(name, (str, Path)) else []
 
 
-def run(project, config, tool, arguments, callback, mutating=False):
+def run(project, config, tool, arguments, callback, mutating=False, validate=None):
+    cache = {}
+    connection_token = _connections.set(cache)
+    try:
+        return _run(project, config, tool, arguments, callback, mutating, validate)
+    finally:
+        for db, _ in cache.values():
+            db.close()
+        _connections.reset(connection_token)
+
+
+def _run(project, config, tool, arguments, callback, mutating, validate):
     timeline = Timeline(project)
     action = timeline.begin(tool, arguments)
     token = None
     failed = False
     try:
+        if validate is not None:
+            validate()
         timeline.reconcile(config)
         with project.action_locked() if mutating else nullcontext():
             try:
@@ -880,7 +908,13 @@ def run(project, config, tool, arguments, callback, mutating=False):
                     ),
                     result,
                 )
-                return {**result, "timeline": receipt}
+                from .results import bounded
+
+                return bounded(
+                    project,
+                    {**result, "timeline": receipt},
+                    arguments.get("response_mode", "bounded"),
+                )
             except Exception as exc:
                 action.fail(exc)
                 failed = True
@@ -888,13 +922,30 @@ def run(project, config, tool, arguments, callback, mutating=False):
     except Exception as exc:
         if not failed:
             action.fail(exc)
+        from .results import bounded, serialized, MAX_RESULT_BYTES
+
+        details = {
+            **getattr(exc, "details", {}),
+            "action_id": action.id,
+            "head": timeline.head(),
+        }
+        message = str(exc)
+        mode = (
+            arguments.get("response_mode", "bounded")
+            if isinstance(arguments, dict)
+            else "bounded"
+        )
+        if mode != "full" and len(serialized(message)) > 2048:
+            details["full_error"] = message
+            message = message[:256] + "... (full error in result evidence)"
         raise BackendError(
-            str(exc),
-            {
-                **getattr(exc, "details", {}),
-                "action_id": action.id,
-                "head": timeline.head(),
-            },
+            message,
+            bounded(
+                project,
+                details,
+                mode,
+                budget=MAX_RESULT_BYTES - 3072,
+            ),
         ) from exc
     finally:
         if token is not None:

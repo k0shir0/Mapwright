@@ -169,7 +169,12 @@ def request(project, config, pid, command, arguments=None, timeout=30):
     try:
         wake = event.OpenEvent(con.EVENT_MODIFY_STATE, False, state["event"])
         _write(
-            directory / f"request-{request_id}.json",
+            (
+                directory / "pending"
+                if state.get("request_queue") == "pending"
+                else directory
+            )
+            / f"request-{request_id}.json",
             {
                 "command": command,
                 "arguments": arguments or {},
@@ -683,6 +688,22 @@ def _stop_editor(editor, job, pid):
     return graceful
 
 
+def pending_requests(directory):
+    """Completed receipts stay addressable outside the small discovery queue."""
+    for pending in sorted((directory / "pending").glob("request-*.json")):
+        request_id = pending.stem.removeprefix("request-")
+        if (directory / f"response-{request_id}.json").exists():
+            # A crash may have happened between response publication and archival.
+            pending.replace(directory / pending.name)
+        else:
+            yield pending
+
+
+def validate_request(call, state):
+    if call["secret"] != state["secret"] or call["deadline"] < time.time():
+        raise BackendError("Native request expired or belongs to another session")
+
+
 def _broker(project, session_id):
     api, con, event, gui, jobapi, process, service = _win32()
     directory = _directory(project, session_id)
@@ -758,6 +779,7 @@ def _broker(project, session_id):
                 "client_session": launch["client_session"],
                 "configured_editor": launch.get("configured_editor", str(exe)),
                 "runtime": launch.get("runtime", {}),
+                "request_queue": "pending",
                 "event": f"Local\\Mapwright_{session_id}_requests",
             }
         )
@@ -818,7 +840,7 @@ def _broker(project, session_id):
                 _idle_cpu(job, False)
                 state["graceful"] = _stop_editor(editor, job, pid)
                 break
-            for pending in sorted(directory.glob("request-*.json")):
+            for pending in pending_requests(directory):
                 request_id = pending.stem.removeprefix("request-")
                 response = directory / f"response-{request_id}.json"
                 if response.exists():
@@ -826,13 +848,7 @@ def _broker(project, session_id):
                 call = json.loads(pending.read_text("utf-8"))
                 completion = None
                 try:
-                    if (
-                        call["secret"] != state["secret"]
-                        or call["deadline"] < time.time()
-                    ):
-                        raise BackendError(
-                            "Native request expired or belongs to another session"
-                        )
+                    validate_request(call, state)
                     _verify_identity(state["editor"])
                     _idle_cpu(job, False)
                     command, arguments = call["command"], call["arguments"]
@@ -900,11 +916,20 @@ def _broker(project, session_id):
                     if not closing:
                         _idle_cpu(job, True)
                 _write(response, result)
+                pending.replace(directory / pending.name)
                 try:
                     completion = event.OpenEvent(
                         con.EVENT_MODIFY_STATE, False, call["completion"]
                     )
                     event.SetEvent(completion)
+                except Exception as exc:
+                    # A timed-out client may already have released its event.
+                    # Keep its response receipt and continue serving the session.
+                    state["completion_errors"] = [
+                        *state.get("completion_errors", []),
+                        str(exc),
+                    ][-10:]
+                    _write(directory / "session.json", state)
                 finally:
                     if completion is not None:
                         completion.Close()

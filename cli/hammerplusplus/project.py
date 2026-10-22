@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
+from collections import Counter
 import hashlib
 import json
 import os
@@ -13,6 +14,7 @@ from datetime import datetime, timezone
 import uuid
 
 from . import vmf
+from .cache import Cache
 
 
 def digest(data: bytes) -> str:
@@ -64,6 +66,10 @@ class Project:
             raise vmf.MapError("Workspace must be an existing directory")
         self.session_id = uuid.uuid4().hex
         self._lock_state = threading.local()
+        self._decoded = Cache(8 * 1024 * 1024)
+        self._views = Cache(32 * 1024 * 1024)
+        self._searches = Cache(8 * 1024 * 1024)
+        self._catalogs = Cache(16 * 1024 * 1024)
 
     def confined(self, name: str | Path) -> Path:
         path = resolved_path(self.root / name)
@@ -140,20 +146,60 @@ class Project:
         if path.stat().st_size > 64 * 1024 * 1024:
             raise vmf.MapError("VMF exceeds the 64 MiB editing limit")
         data = path.read_bytes()
-        text, encoding = decode(data)
+        if len(data) > 64 * 1024 * 1024:
+            raise vmf.MapError("VMF exceeds the 64 MiB editing limit")
+        revision = digest(data)
+        decoded = self._decoded.get(revision)
+        if decoded is None:
+            decoded = decode(data)
+            self._decoded.put(revision, decoded)
+        text, encoding = decoded
         return path, data, text, encoding
 
+    def view(self, name: str):
+        path, data, text, encoding = self.read(name)
+        revision = digest(data)
+        view = self._views.get(revision)
+        if view is None:
+            root = vmf.parse(text)
+            objects = [
+                n
+                for n in root.walk()
+                if n.value is None and n.key in ("world", "entity", "solid")
+            ]
+            view = {
+                "root": root,
+                "index": vmf.id_index(root),
+                "objects": objects,
+                "counts": dict(Counter(n.key for n in objects)),
+                "classnames": dict(
+                    Counter(n.get("classname") for n in objects if n.key == "entity")
+                ),
+            }
+            self._views.put(revision, view)
+        return path, data, text, encoding, view
+
     def inspect(self, name: str, offset: int = 0, limit: int = 100) -> dict:
-        path, data, text, _ = self.read(name)
+        if offset < 0 or not 1 <= limit <= 1000:
+            raise vmf.MapError(
+                "offset must be nonnegative and limit between 1 and 1000"
+            )
+        path, data, _, _, view = self.view(name)
+        objects = view["objects"]
         return {
             "path": str(path),
             "revision": digest(data),
-            **vmf.inspect(text, offset, limit),
+            "counts": dict(view["counts"]),
+            "classnames": dict(view["classnames"]),
+            "total": len(objects),
+            "offset": offset,
+            "objects": [vmf.describe(n) for n in objects[offset : offset + limit]],
+            "next_offset": offset + limit if offset + limit < len(objects) else None,
         }
 
     def object(self, name: str, object_id: int, kind: str | None = None) -> dict:
-        _, data, text, _ = self.read(name)
-        node = vmf.find_id(vmf.parse(text), object_id, kind)
+        _, data, text, _, view = self.view(name)
+        node = vmf.find_id(view["root"], object_id, kind, index=view["index"])
         return {
             "revision": digest(data),
             **vmf.describe(node),
@@ -164,8 +210,16 @@ class Project:
         _, data, text, _ = self.read(name)
         return {"revision": digest(data), **vmf.validate(text)}
 
-    def source(self, name: str, offset: int = 0, limit: int = 100000) -> dict:
+    def source(
+        self,
+        name: str,
+        offset: int = 0,
+        limit: int = 100000,
+        expected_revision: str | None = None,
+    ) -> dict:
         _, data, text, encoding = self.read(name)
+        if expected_revision is not None and digest(data) != expected_revision:
+            raise vmf.MapError("Revision conflict; restart source pagination")
         if offset < 0 or not 1 <= limit <= 1000000:
             raise vmf.MapError(
                 "offset must be nonnegative, limit between 1 and 1000000"
@@ -174,6 +228,7 @@ class Project:
             "revision": digest(data),
             "encoding": encoding,
             "source": text[offset : offset + limit],
+            "source_complete": offset == 0 and len(text) <= limit,
             "offset": offset,
             "total_characters": len(text),
             "next_offset": offset + limit if offset + limit < len(text) else None,
@@ -374,8 +429,109 @@ class Project:
         return self.inspect(name)
 
     def journal_path(self, path: Path) -> Path:
-        key = digest(str(path.relative_to(self.root)).casefold().encode())
+        # Enumerate actual component spellings rather than assuming that the OS
+        # determines case sensitivity (Windows directories can be sensitive too).
+        path = self.canonical_map_path(path)
+        key = digest(("journal-v2/" + path.relative_to(self.root).as_posix()).encode())
         return self.confined(f".hammer-agent/history/{key}.json")
+
+    def canonical_map_path(self, path: Path) -> Path:
+        path = self.confined(path)
+        current = self.root
+        for part in path.relative_to(self.root).parts:
+            candidate = current / part
+            if current.is_dir():
+                entries = list(current.iterdir())
+                exact = next((p for p in entries if p.name == part), None)
+                if exact is not None:
+                    candidate = exact
+                elif candidate.exists():
+                    aliases = [p for p in entries if p.samefile(candidate)]
+                    if len(aliases) == 1:
+                        candidate = aliases[0]
+            current = candidate
+        return current
+
+    def legacy_history(
+        self, path: Path, *, recover: bool, only_pending: bool = False
+    ) -> dict | None:
+        key = digest(str(path.relative_to(self.root)).casefold().encode())
+        journal = self.confined(f".hammer-agent/history/{key}.json")
+        if not journal.exists():
+            return None
+        state = json.loads(journal.read_text("utf-8"))
+        if state.get("migrated_to"):
+            return None
+        if (
+            only_pending
+            and state.get("migration_pending") != self.journal_path(path).name
+        ):
+            return None
+        recorded = state.get("path") or state.get("pending", {}).get("state", {}).get(
+            "path"
+        )
+        if recorded:
+            if (
+                self.canonical_map_path(self.map_path(recorded)).as_posix()
+                != path.as_posix()
+            ):
+                return None
+        else:
+            candidates = [self.root]
+            for part in path.relative_to(self.root).parts:
+                candidates = [
+                    child
+                    for parent in candidates
+                    if parent.is_dir()
+                    for child in parent.iterdir()
+                    if child.name.casefold() == part.casefold()
+                    and not child.is_symlink()
+                ]
+            if [p.as_posix() for p in candidates] != [path.as_posix()]:
+                raise vmf.MapError(
+                    f"Ambiguous legacy history retained at {journal}; identify its map before migrating"
+                )
+            hashes = {
+                entry[k]
+                for entry in state.get("entries", [])
+                for k in ("before", "after")
+            }
+            hashes.update(state.get("pending", {}).get(k) for k in ("before", "after"))
+            if hashes - {None} and (
+                not path.exists() or digest(path.read_bytes()) not in hashes
+            ):
+                raise vmf.MapError(
+                    f"Unidentified legacy history retained at {journal}; external map changes prevent migration"
+                )
+        state = {
+            **state,
+            "path": path.relative_to(self.root).as_posix(),
+            "journal_version": 2,
+        }
+        if recover:
+            from .timeline import track_file
+
+            track_file(self, journal)
+            destination = self.journal_path(path)
+            atomic_write(
+                journal,
+                json.dumps({**state, "migration_pending": destination.name}).encode(),
+            )
+            if not destination.exists():
+                migrated = {k: v for k, v in state.items() if k != "migration_pending"}
+                atomic_write(destination, json.dumps(migrated).encode(), exclusive=True)
+            # Keep all original evidence. The marker prevents resurrection when a
+            # timeline checkout intentionally removes the migrated journal.
+            atomic_write(
+                journal,
+                json.dumps(
+                    {
+                        **{k: v for k, v in state.items() if k != "migration_pending"},
+                        "migrated_to": destination.name,
+                    }
+                ).encode(),
+            )
+        return state
 
     def snapshot(self, revision: str, data: bytes | None = None) -> bytes:
         if len(revision) != 64 or any(c not in "0123456789abcdef" for c in revision):
@@ -392,10 +548,16 @@ class Project:
         return result
 
     def load_history(self, path: Path, *, recover: bool = True) -> dict:
+        path = self.canonical_map_path(path)
         journal = self.journal_path(path)
         if not journal.exists():
-            return {"entries": [], "position": 0}
-        state = json.loads(journal.read_text("utf-8"))
+            state = self.legacy_history(path, recover=recover)
+            if state is None:
+                return {"entries": [], "position": 0}
+        else:
+            if recover:
+                self.legacy_history(path, recover=True, only_pending=True)
+            state = json.loads(journal.read_text("utf-8"))
         if "pending" in state:
             pending = state["pending"]
             current = digest(path.read_bytes())
@@ -412,6 +574,11 @@ class Project:
         return state
 
     def publish(self, path: Path, before: bytes, after: bytes, old: dict, state: dict):
+        state = {
+            **state,
+            "path": self.canonical_map_path(path).relative_to(self.root).as_posix(),
+            "journal_version": 2,
+        }
         before_hash, after_hash = digest(before), digest(after)
         self.snapshot(before_hash, before)
         self.snapshot(after_hash, after)
@@ -517,10 +684,35 @@ class Project:
             "validation": validation,
         }
 
-    def history(self, name: str) -> dict:
+    def history(
+        self,
+        name: str,
+        offset: int = 0,
+        limit: int = 100,
+        expected_history_revision: str | None = None,
+    ) -> dict:
+        if offset < 0 or not 1 <= limit <= 1000:
+            raise vmf.MapError(
+                "offset must be nonnegative and limit between 1 and 1000"
+            )
         path, data, _, _ = self.read(name)
         state = self.load_history(path, recover=False)
-        return {"revision": digest(data), **state}
+        history_revision = digest(json.dumps(state, sort_keys=True).encode())
+        if (
+            expected_history_revision is not None
+            and history_revision != expected_history_revision
+        ):
+            raise vmf.MapError("History revision conflict; restart history pagination")
+        entries = state["entries"]
+        return {
+            "revision": digest(data),
+            "history_revision": history_revision,
+            **state,
+            "entries": entries[offset : offset + limit],
+            "total": len(entries),
+            "offset": offset,
+            "next_offset": offset + limit if offset + limit < len(entries) else None,
+        }
 
     def restore(self, name: str, expected_revision: str, direction: str) -> dict:
         if direction not in ("undo", "redo"):
