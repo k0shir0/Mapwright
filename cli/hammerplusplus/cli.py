@@ -487,7 +487,7 @@ def main(argv=None):
             )
     print(
         json.dumps(
-            result, indent=None if compact else 2, ensure_ascii=False, allow_nan=False
+            result, indent=None if compact else 2, ensure_ascii=True, allow_nan=False
         ),
         file=sys.stderr if command == "mcp" else sys.stdout,
     )
