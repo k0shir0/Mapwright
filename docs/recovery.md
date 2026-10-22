@@ -137,6 +137,10 @@ recoverable, not multi-file atomic. After interruption, read `recovery/` and
 run `resume-recovery TOKEN`; unexpected file hashes cause refusal. To reverse
 a completed restore, inspect/restore its reverse checkpoint normally.
 
+Explicit checkpoints may include saved files under `.hammer-agent/builds/` and
+`.hammer-agent/imports/`; these files are tracked when restored. Timeline databases,
+checkpoint receipts/blobs and other recovery metadata remain excluded from restore.
+
 Checkpoints protect saved files. For editor-only changes, inspect and invoke
 Hammer's Edit/Undo command through the native control API, then verify staging.
 Coordinate saves from any independently opened editor before file restoration.
@@ -149,3 +153,18 @@ Coordinate saves from any independently opened editor before file restoration.
 Resources: `hammer://workspace/artifacts`, `hammer://workspace/operations`,
 `hammer://artifact/{path}`. URL-encode the workspace-relative artifact path;
 use tools for pagination.
+
+## Installer rollback
+
+`python scripts/setup_agent.py --rollback RECEIPT --yes` restores the selected
+registration, skills and configuration. It retains downloaded tools and maps.
+Rollback verifies all current hashes and backup checksums before starting, records
+`rolling-back` before writing, and rechecks each file immediately before restoring.
+After an interrupted installation or rollback, rerun the same receipt: files already restored are skipped;
+unexpected external edits cause refusal. Keep the receipt and backups until the
+transaction reaches `rolled-back`. Coordinate other writers; per-file checks do
+not lock independently running editors or make multi-file restoration atomic.
+Interrupted automatic unwinding retains `rolling-back`; preserved external edits
+retain `rollback-conflict`. Both remain recoverable through the receipt once all
+files match their recorded before/after bytes. An `applying` receipt can likewise
+be rolled back after a process crash during installation.

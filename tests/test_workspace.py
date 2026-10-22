@@ -86,6 +86,61 @@ class WorkspaceTests(unittest.TestCase):
         self.assertTrue((self.root / "maps/new.vmf").exists())
         self.assertFalse((self.root / "assets/a.bin").exists())
 
+    def test_checkpoint_artifact_scopes_restore_and_checkout_through_dispatcher(self):
+        from cli.hammerplusplus import timeline
+
+        for category in ("builds", "imports"):
+            with self.subTest(category=category):
+                name = f".hammer-agent/{category}/job/evidence.bin"
+                self.write(name, b"original evidence")
+                cp = execute(self.project, {}, "create_checkpoint", {"paths": [name]})
+                self.write(name, b"changed evidence")
+                status = execute(
+                    self.project, {}, "inspect_checkpoint", {"token": cp["token"]}
+                )
+                restored = execute(
+                    self.project,
+                    {},
+                    "restore_checkpoint",
+                    {
+                        "token": cp["token"],
+                        "expected_revisions": status["current_revisions"],
+                    },
+                )
+                self.assertEqual((self.root / name).read_bytes(), b"original evidence")
+                reverse = execute(
+                    self.project,
+                    {},
+                    "inspect_checkpoint",
+                    {"token": restored["reverse_checkpoint"]},
+                )
+                execute(
+                    self.project,
+                    {},
+                    "restore_checkpoint",
+                    {
+                        "token": reverse["token"],
+                        "expected_revisions": reverse["current_revisions"],
+                    },
+                )
+                self.assertEqual((self.root / name).read_bytes(), b"changed evidence")
+                execute(
+                    self.project,
+                    {},
+                    "checkout_action",
+                    {
+                        "target": restored["timeline"]["action_id"],
+                        "expected_head": timeline.Timeline(self.project).head(),
+                    },
+                )
+                self.assertEqual((self.root / name).read_bytes(), b"original evidence")
+        for name in (
+            ".hammer-agent/timeline/actions.sqlite3",
+            ".hammer-agent/checkpoints/receipt.json",
+        ):
+            with self.assertRaises(vmf.MapError):
+                timeline.file_path(self.project, name)
+
     def test_interrupted_restore_resumes_but_refuses_external_edits(self):
         self.write("maps/a", b"a")
         self.write("maps/b", b"b")

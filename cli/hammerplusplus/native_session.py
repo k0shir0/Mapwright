@@ -482,8 +482,6 @@ def action(project, config, pid, arguments):
 
 
 def quiesce(project, config, paths):
-    from . import timeline
-
     selected = {project.confined(p) for p in paths}
     specs = []
     root = project.confined(".hammer-agent/native-sessions")
@@ -495,8 +493,7 @@ def quiesce(project, config, paths):
         ):
             continue
         find_session(project, config, state["editor"]["pid"])
-        checkpoint(project, config, state["editor"]["pid"])
-        timeline.track_file(project, state["staged"])
+        # close_editor already checkpoints and tracks the staged saved document.
         close_editor(project, config, state["editor"]["pid"])
         specs.append({"session_id": state["session_id"]})
     return specs

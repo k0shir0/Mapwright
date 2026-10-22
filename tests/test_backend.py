@@ -105,6 +105,28 @@ class BackendTests(unittest.TestCase):
             backend.compile_map(self.project, self.config, "map.vmf", self.revision)
         self.assertEqual(len(calls), 1)
 
+    def test_large_logs_still_detect_late_errors_and_report_actual_tail(self):
+        for marker in (b"ERROR: late failure", b"**** leaked ****"):
+            with self.subTest(marker=marker):
+
+                class Process:
+                    def __init__(self, args, **kwargs):
+                        kwargs["stdout"].write(
+                            b"x" * (1024 * 1024) + b"\n" + marker + b"\n"
+                        )
+                        Path(args[-1]).with_suffix(".bsp").write_bytes(synthetic_bsp())
+
+                    def wait(self, **kwargs):
+                        return 0
+
+                with patch.object(backend.subprocess, "Popen", Process):
+                    with self.assertRaises(backend.BackendError) as failure:
+                        backend.compile_map(
+                            self.project, self.config, "map.vmf", self.revision
+                        )
+                self.assertIn(marker.decode(), failure.exception.details["output_tail"])
+                self.assertTrue(failure.exception.details["stages"][0]["log_truncated"])
+
     def test_stage_arguments_and_receipt_use_fresh_build(self):
         calls = []
 

@@ -20,7 +20,7 @@ ENTITY_PROPERTIES = {
 REVISION = {
     "type": "string",
     "pattern": "^[a-f0-9]{64}$",
-    "description": "Current revision returned by inspect; stale revisions are refused.",
+    "description": "Current SHA-256 from inspect; stale writes fail.",
 }
 MAP = {"type": "string", "description": "VMF path inside the server workspace."}
 KIND = {
@@ -123,7 +123,7 @@ TOOLS = {
         [],
     ),
     "read_map_source": spec(
-        "Read native VMF source with its revision. offset is characters; limit is 1..1000000 characters per page. Use replace_source in edit_map to author unsupported features.",
+        "Read revision and VMF source; offset/limit count characters (max 1000000). Follow next_offset before replacing source.",
         {
             "path": MAP,
             "offset": {"type": "integer", "minimum": 0},
@@ -144,7 +144,7 @@ TOOLS = {
         False,
     ),
     "import_reference_map": spec(
-        "Import an external VMF or CS:GO BSP to a new VMF. BSP inputs require configured bspsrc_java (BSPSource bundled Java). Assets extract locally; returns provenance and reconstruction limits.",
+        "Import external VMF/CS:GO BSP to a new VMF with provenance/limits. BSP needs bspsrc_java; embedded assets extract locally.",
         {
             "source": STRING,
             "output": MAP,
@@ -154,7 +154,7 @@ TOOLS = {
         False,
     ),
     "search_reference_map": spec(
-        "Search raw source text (including names, properties, coordinates and comments) of entities/world brushes, with optional spatial bounds. Resolve the user's item description before copying.",
+        "Search entity/world-brush source with optional spatial bounds. Identify requested objects before copying.",
         {
             "path": MAP,
             "query": STRING,
@@ -167,7 +167,7 @@ TOOLS = {
         ["path"],
     ),
     "copy_reference_objects": spec(
-        "Copy identified reference solids/entities into an existing destination VMF with both revisions checked, ID and targetname remapping, linked entities, texture-locked translation and provenance. Supports displacements and overlay face remapping; inspect external-reference warnings.",
+        "Copy typed reference IDs with both revisions checked, ID/name/link remapping, texture-locked translation and provenance. Supports displacements/overlays; inspect external-reference warnings.",
         {
             "source": MAP,
             "destination": MAP,
@@ -197,7 +197,7 @@ TOOLS = {
         False,
     ),
     "inspect_editor": spec(
-        "Inspect an owned Hammer++ session's menus, windows and controls on its private Windows desktop. Use the PID returned by open_editor. The user's desktop is unchanged; desktop extra required.",
+        "Inspect owned Hammer++ menus/windows/controls on its private desktop. Use open_editor's PID; requires desktop extra.",
         {
             "pid": {"type": "integer", "minimum": 1},
             "limit": {"type": "integer", "minimum": 1, "maximum": 1000},
@@ -205,7 +205,7 @@ TOOLS = {
         ["pid"],
     ),
     "editor_action": spec(
-        "Send semantic menu/control commands to an owned private-desktop Hammer++ session. Staged document checkpoints are recorded before/after actions; inspect checkpointed/document_reversible and resulting controls. save_editor commits to the source map. No user keyboard or mouse input.",
+        "Dispatch semantic commands on the owned private desktop. Inspect resulting controls and checkpointed/document_reversible; save_editor commits staging. No global input.",
         {
             "pid": {"type": "integer", "minimum": 1},
             "action": {
@@ -307,31 +307,31 @@ TOOLS = {
         False,
     ),
     "open_editor": spec(
-        "Open a staged copy of this VMF in an owned Hammer++ session on a private Windows desktop. Handles known startup dialogs and waits for the requested map title; returns owned PID/session ID. No user desktop switch. Does not prove GPU rendering.",
+        "Open a staged VMF on an owned private desktop; handle known startup dialogs and wait for map title. Returns PID/session. No desktop switch; title readiness does not prove rendering.",
         {"path": MAP, "timeout": {"type": "integer", "minimum": 1, "maximum": 120}},
         ["path"],
         False,
     ),
     "package_map": spec(
-        "Create a new workspace ZIP from a compile receipt with verified embedded assets and matching BSP/NAV hashes. Read back every archive entry; refuses overwrite or changed build files. Does not install or prove gameplay.",
+        "Create a new ZIP from a verified compile receipt/BSP/NAV pair; verify every entry/hash. Refuses overwrite or changed builds. Does not install or prove gameplay.",
         {"build_dir": STRING, "output": STRING},
         ["build_dir", "output"],
         False,
     ),
     "save_editor": spec(
-        "Save the owned editor's staged VMF, verify readback, then commit to its source map through a revision-checked transaction and action history. Fails on modal dialogs or external source edits.",
+        "Save/verify owned staging, then commit with the source revision and history. Refuses modal dialogs or external source edits.",
         {"pid": {"type": "integer", "minimum": 1}, "expected_revision": REVISION},
         ["pid", "expected_revision"],
         False,
     ),
     "close_editor": spec(
-        "Close only the owned private-desktop editor session and its helpers. Retains staged files and receipts; returns cleanup evidence. Never closes the user's editor.",
+        "Close the owned editor/helpers and return cleanup evidence; retain staging/receipts. Leaves other editors alone.",
         {"pid": {"type": "integer", "minimum": 1}},
         ["pid"],
         False,
     ),
     "capture_editor": spec(
-        "Capture an owned private-desktop Hammer++ viewport to a NEW workspace PNG; existing output names are refused. auto tries the verified renderer profile then explicitly reports any fallback to UI-only PrintWindow; viewport requires GPU readback, window captures UI chrome. No focus or user desktop capture.",
+        "Capture owned Hammer++ to a new PNG. viewport requires verified GPU readback; window is UI-only; auto reports any UI fallback. No focus or user-desktop capture.",
         {
             "pid": {"type": "integer", "minimum": 1},
             "output": STRING,
@@ -444,8 +444,7 @@ for name, (check, description) in KZ_TOOLS.items():
             "maxItems": 1000,
         }
     TOOLS[name] = spec(
-        description
-        + " Read-only VMF analysis; unsupported geometry is reported; compile/test in-game.",
+        description + " Reports unsupported geometry.",
         props,
         required,
     )
@@ -454,13 +453,13 @@ for name, (check, description) in KZ_TOOLS.items():
 for op in OPERATIONS["oneOf"]:
     name = op["properties"]["op"]["const"]
     TOOLS["map_" + name] = spec(
-        "Apply one "
+        "Apply "
         + name
-        + " operation with revision check, snapshots and dry-run. "
+        + " with revision check, snapshots and dry_run. "
         + (
             "Replaces the entire source; inspect a checkpoint first."
             if name == "replace_source"
-            else "See field schema; untouched bytes remain intact."
+            else "Preserves untouched bytes."
         ),
         {
             "path": MAP,
@@ -632,9 +631,15 @@ def _execute(project: Project, config: dict, action: str, args: dict) -> dict:
     try:
         jsonschema.Draft202012Validator(TOOLS[action]["inputSchema"]).validate(args)
     except jsonschema.ValidationError as exc:
-        raise MapError(
-            f"Invalid {action} argument at {list(exc.absolute_path)}: {exc.message}"
-        ) from exc
+        # jsonschema includes repr(instance) in many messages (including source
+        # replacements and entire oneOf batches). Keep failures useful and bounded.
+        reason = exc.message
+        if len(reason) > 320:
+            reason = f"{exc.validator} constraint failed; inspect this tool's schema"
+        location = str(list(exc.absolute_path))
+        if len(location) > 160:
+            location = location[:157] + "..."
+        raise MapError(f"Invalid {action} argument at {location}: {reason}") from exc
     values = dict(args)
     path = values.pop("path", None)
     if action == "package_map":

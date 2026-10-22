@@ -59,7 +59,10 @@ def file_path(project, name):
             and all(c in "0123456789abcdef" for c in path.stem)
             and path.suffix == ".json"
         )
-        if not native and not journal:
+        # Explicit checkpoints may include build/import evidence. Use the same
+        # scope here so tracking and restore accept every permitted checkpoint.
+        evidence = len(parts) >= 3 and parts[1] in {"builds", "imports"}
+        if not native and not journal and not evidence:
             raise MapError("Timeline metadata cannot be included in file checkout")
     if path.exists() and not path.is_file():
         raise MapError("Timeline managed paths must be files")
@@ -531,16 +534,13 @@ class Action:
             else {}
         )
         changed = False
+        observed = []
         for row in files:
             after = store_file(self.project, file_path(self.project, row["path"]))
             # A failed checkout can still preserve previously external bytes as
             # a new state, making the next guarded checkout possible.
             changed |= after != expected_state[row["path"]]
-            with self.timeline.connect() as db:
-                db.execute(
-                    "UPDATE files SET after_hash=?,after_known=1 WHERE action=? AND path=?",
-                    (after, self.id, row["path"]),
-                )
+            observed.append((after, self.id, row["path"]))
         result = result or {}
         kept = {
             key: result[key]
@@ -583,6 +583,12 @@ class Action:
             if key in result
         }
         with self.timeline.connect() as db:
+            # Finalize all observed hashes and HEAD together, instead of one
+            # FULL-synchronous SQLite transaction per tracked file.
+            db.executemany(
+                "UPDATE files SET after_hash=?,after_known=1 WHERE action=? AND path=?",
+                observed,
+            )
             db.execute(
                 "UPDATE actions SET status=?,finalized=1,changed=?,elapsed=?,result=?,error=?,details=? "
                 "WHERE id=?",

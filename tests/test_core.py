@@ -29,6 +29,31 @@ class ProjectTests(unittest.TestCase):
     def edit(self, *operations):
         return self.project.apply("map.vmf", self.revision(), list(operations))
 
+    def test_schema_errors_do_not_echo_large_invalid_payloads(self):
+        cases = (
+            (
+                "map_add_entity",
+                {"classname": ["x" * 100000], "origin": [0, 0, 0]},
+                "classname",
+            ),
+            (
+                "map_set_properties",
+                {"id": 1, "properties": {"x" * 100000: []}},
+                "properties",
+            ),
+        )
+        for tool, values, field in cases:
+            with self.subTest(tool=tool), self.assertRaises(vmf.MapError) as invalid:
+                api.execute(
+                    self.project,
+                    {},
+                    tool,
+                    {"path": "map.vmf", "expected_revision": self.revision(), **values},
+                )
+            self.assertLess(len(str(invalid.exception)), 600)
+            self.assertIn(field, str(invalid.exception))
+        self.assertTrue(self.project.validate("map.vmf")["valid"])
+
     def test_room_and_independent_geometry_oracle(self):
         from srctools import Keyvalues, Vec
         from srctools.vmf import VMF

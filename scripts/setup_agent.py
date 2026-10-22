@@ -361,7 +361,10 @@ def apply_changes(changes, workspace):
             applied.append(change)
         manifest["status"] = "applied"
     except BaseException:
-        manifest["status"] = "rolled-back"
+        # Keep recovery possible if automatic unwinding itself fails or the
+        # process exits between restores. Only declare completion after all writes.
+        manifest["status"] = "rolling-back"
+        atomic(receipt, json.dumps(manifest, indent=2).encode())
         for change in reversed(applied):
             if read(change.path) != change.after:
                 manifest["status"] = "rollback-conflict"
@@ -370,6 +373,8 @@ def apply_changes(changes, workspace):
                 change.path.unlink()
             else:
                 atomic(change.path, change.before)
+        if manifest["status"] != "rollback-conflict":
+            manifest["status"] = "rolled-back"
         raise
     finally:
         atomic(receipt, json.dumps(manifest, indent=2).encode())
@@ -378,13 +383,24 @@ def apply_changes(changes, workspace):
 
 def rollback(receipt, apply=False):
     manifest = json.loads(receipt.read_text("utf-8"))
-    if manifest.get("version") != 1 or manifest.get("status") != "applied":
-        raise ValueError("Receipt must describe an applied setup transaction")
+    if manifest.get("version") != 1 or manifest.get("status") not in (
+        "applied",
+        "applying",
+        "rolling-back",
+        "rollback-conflict",
+    ):
+        raise ValueError(
+            "Receipt must describe an applied or interrupted setup/rollback transaction"
+        )
+    resuming = manifest["status"] != "applied"
     changes = []
     for entry in manifest["files"]:
         path = Path(entry["path"])
         current = read(path)
-        if sha(current) != entry["after"]:
+        current_hash = sha(current)
+        if current_hash != entry["after"] and not (
+            resuming and current_hash == entry["before"]
+        ):
             raise ValueError(f"Refusing rollback over later changes: {path}")
         before = None
         if entry["before"] is not None:
@@ -394,9 +410,18 @@ def rollback(receipt, apply=False):
             before = backup.read_bytes()
             if sha(before) != entry["before"]:
                 raise ValueError("Backup digest mismatch")
-        changes.append((path, before))
+        changes.append((path, before, entry["after"]))
     if apply:
-        for path, before in reversed(changes):
+        # Persist intent before the first file write. A restarted rollback accepts
+        # only the recorded before/after bytes, and preflights the entire scope.
+        manifest["status"] = "rolling-back"
+        atomic(receipt, json.dumps(manifest, indent=2).encode())
+        for path, before, expected in reversed(changes):
+            current = read(path)
+            if current == before:
+                continue
+            if sha(current) != expected:
+                raise ValueError(f"Refusing rollback over later changes: {path}")
             if before is None:
                 path.unlink()
             else:
@@ -405,7 +430,7 @@ def rollback(receipt, apply=False):
         atomic(receipt, json.dumps(manifest, indent=2).encode())
     return {
         "status": "rolled-back" if apply else "planned",
-        "files": [str(p) for p, _ in changes],
+        "files": [str(p) for p, _, _ in changes],
     }
 
 

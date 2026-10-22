@@ -51,7 +51,7 @@ def _assert_owned(project, config, pid):
 def owned_windows(pid):
     import ctypes
     from ctypes import wintypes
-    import win32api, win32gui, win32process, win32service
+    import win32api, win32process, win32service
 
     handles = []
     user = ctypes.WinDLL("user32", use_last_error=True)
@@ -175,7 +175,7 @@ def control_text(handle, class_name):
 
 def _inspect_editor(project, config, pid: int, limit: int = 200):
     _assert_owned(project, config, pid)
-    import win32gui, win32process
+    import win32gui
 
     handles = owned_windows(pid)
     windows = []
@@ -223,13 +223,6 @@ def _editor_action(
     hwnd: int | None = None,
     menu: str = "",
     text: str = "",
-    keys: str = "",
-    x: int = 0,
-    y: int = 0,
-    end_x: int = 0,
-    end_y: int = 0,
-    button: str = "left",
-    steps: int = 1,
 ):
     _assert_owned(project, config, pid)
     import win32gui, win32process
