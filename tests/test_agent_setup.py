@@ -238,6 +238,104 @@ trust_level = "trusted"
             setup.rollback(receipt, True)
         self.assertEqual(path.read_bytes(), b"later edit")
 
+    def test_rollback_resumes_after_partial_restoration(self):
+        first, second = self.home / "first", self.home / "second"
+        first.write_bytes(b"original")
+        receipt = setup.apply_changes(
+            [
+                setup.Change(first, b"original", b"installed"),
+                setup.Change(second, None, b"new file"),
+            ],
+            self.workspace,
+        )
+        real_atomic = setup.atomic
+
+        def interrupt(path, data):
+            if path == first:
+                raise OSError("interrupted rollback")
+            return real_atomic(path, data)
+
+        with patch.object(setup, "atomic", side_effect=interrupt):
+            with self.assertRaisesRegex(OSError, "interrupted rollback"):
+                setup.rollback(receipt, True)
+        self.assertFalse(second.exists())
+        self.assertEqual(first.read_bytes(), b"installed")
+        self.assertEqual(json.loads(receipt.read_text())["status"], "rolling-back")
+        # Preview is read-only and a resumed rollback tolerates completed files.
+        self.assertEqual(setup.rollback(receipt)["status"], "planned")
+        self.assertEqual(setup.rollback(receipt, True)["status"], "rolled-back")
+        self.assertEqual(first.read_bytes(), b"original")
+        self.assertFalse(second.exists())
+
+    def test_rollback_rechecks_each_file_before_overwriting(self):
+        first, second = self.home / "first", self.home / "second"
+        for path in (first, second):
+            path.write_bytes(b"original")
+        receipt = setup.apply_changes(
+            [setup.Change(p, b"original", b"installed") for p in (first, second)],
+            self.workspace,
+        )
+        real_atomic = setup.atomic
+
+        def concurrent_edit(path, data):
+            result = real_atomic(path, data)
+            if path == second:
+                first.write_bytes(b"external edit")
+            return result
+
+        with patch.object(setup, "atomic", side_effect=concurrent_edit):
+            with self.assertRaisesRegex(ValueError, "later changes"):
+                setup.rollback(receipt, True)
+        self.assertEqual(first.read_bytes(), b"external edit")
+        self.assertEqual(second.read_bytes(), b"original")
+        with self.assertRaisesRegex(ValueError, "later changes"):
+            setup.rollback(receipt, True)
+
+    def test_failed_install_unwind_failure_can_resume_from_receipt(self):
+        first, second = self.home / "first", self.home / "second"
+        first.write_bytes(b"original")
+        real_atomic = setup.atomic
+
+        def fail(path, data):
+            if path == second:
+                raise OSError("installation failed")
+            if path == first and data == b"original":
+                raise OSError("rollback write failed")
+            return real_atomic(path, data)
+
+        with patch.object(setup, "atomic", side_effect=fail):
+            with self.assertRaisesRegex(OSError, "rollback write failed"):
+                setup.apply_changes(
+                    [
+                        setup.Change(first, b"original", b"installed"),
+                        setup.Change(second, None, b"new file"),
+                    ],
+                    self.workspace,
+                )
+        receipt = next((self.workspace / ".local/agent-setup").glob("*/manifest.json"))
+        self.assertEqual(json.loads(receipt.read_text())["status"], "rolling-back")
+        setup.rollback(receipt, True)
+        self.assertEqual(first.read_bytes(), b"original")
+        self.assertFalse(second.exists())
+
+    def test_rollback_accepts_interrupted_install_before_after_states(self):
+        first, second = self.home / "first", self.home / "second"
+        receipt = setup.apply_changes(
+            [
+                setup.Change(first, None, b"installed first"),
+                setup.Change(second, None, b"installed second"),
+            ],
+            self.workspace,
+        )
+        # Durable state left by a crash between the two installation writes.
+        second.unlink()
+        manifest = json.loads(receipt.read_text())
+        manifest["status"] = "applying"
+        setup.atomic(receipt, json.dumps(manifest).encode())
+        setup.rollback(receipt, True)
+        self.assertFalse(first.exists())
+        self.assertFalse(second.exists())
+
     def test_failed_apply_restores_prior_files(self):
         first, second = self.home / "first", self.home / "second"
         first.write_bytes(b"before")

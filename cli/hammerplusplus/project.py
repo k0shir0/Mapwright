@@ -11,7 +11,6 @@ import tempfile
 import threading
 from datetime import datetime, timezone
 import uuid
-from typing import Any
 
 from . import vmf
 

@@ -29,6 +29,23 @@ OS elevation or installation policy, client trust, or access to a suitable
 Windows graphics session. Report the exact blocker and working capabilities;
 offline setup is not a claim of native readiness.
 
+### Python provisioning
+
+Resolve and verify Python 3.11+ with `python`, `py -3`, or an available `uv`
+managed interpreter. Reuse a working installation. If Windows has none, provision
+64-bit per-user Python with the installed WinGet client:
+
+```powershell
+winget install --id Python.Python.3.13 --exact --source winget --scope user --silent --accept-package-agreements --accept-source-agreements --disable-interactivity
+```
+
+Resolve and verify the installed executable; the current shell may retain its
+old PATH. See [WinGet installation flags](https://learn.microsoft.com/en-us/windows/package-manager/winget/install).
+On Linux/macOS use an available `uv` managed Python or the system package manager
+to install Python, `venv` and `pip` (some distributions split these packages).
+Verify `python -m venv` and pip. Report concrete policy, elevation or package
+infrastructure failures and retain the usable terminal/offline path.
+
 Setup first reuses the workspace's `mapwright.local.json` (or the legacy
 `hammer-agent.local.json`), then the checkout configuration with relative paths
 resolved. Otherwise it searches known local installs and Steam libraries for

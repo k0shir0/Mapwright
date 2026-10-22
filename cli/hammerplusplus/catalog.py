@@ -1,8 +1,6 @@
 """Optional local Source asset and entity catalogs, using srctools."""
 
-from pathlib import Path
-
-from .backend import configured_path, require_game, fgd_paths
+from .backend import require_game, fgd_paths
 from .project import Project
 from .vmf import MapError
 
@@ -156,7 +154,6 @@ def assets(
 ) -> dict:
     if kind not in ("material", "model") or not 1 <= limit <= 1000:
         raise MapError("kind must be material or model; limit between 1 and 1000")
-    _, VPK = source_tools()
     game = require_game(project, config)
     folder, suffix = ("materials", ".vmt") if kind == "material" else ("models", ".mdl")
     matches = {}

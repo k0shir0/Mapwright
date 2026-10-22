@@ -126,7 +126,8 @@ def serve(project: Project, config: dict):
             )
         return [
             ReadResourceContents(
-                json.dumps(result, ensure_ascii=True), "application/json"
+                json.dumps(result, ensure_ascii=True, separators=(",", ":")),
+                "application/json",
             )
         ]
 
@@ -216,7 +217,10 @@ def serve(project: Project, config: dict):
             if isinstance(exc, BackendError):
                 result["details"] = exc.details
         content = [
-            TextContent(type="text", text=json.dumps(result, ensure_ascii=False))
+            TextContent(
+                type="text",
+                text=json.dumps(result, ensure_ascii=False, separators=(",", ":")),
+            )
         ]
         if name == "capture_editor" and result["ok"]:
             content.append(
@@ -255,6 +259,10 @@ For ladders/water use add_box face_materials (top/bottom/north/south/east/west).
 Run validate_map and kz_audit; a successful check returns ok=true even with findings.
 Inspect data.valid, findings, complete and unsupported_geometry. Use kz_measure_jumps
 on solids/top faces, ordered kz_check_bhop routes, and corridor headhitter checks.
+Check every light origin/emitting surface clears walls, props and fixture housings.
+Inspect every visible block from reachable views for missing/reversed faces, missing
+materials or exposed nodraw; ordinary boxes need six faces. Verify lighting/surfaces
+in a fresh compiled render; unsupported geometry needs manual inspection.
 KZ names are a plugin API: preserve climb_* names; enable button flags 1+32, trigger
 Clients=1, anti-bhop thickness >=16u, destination floor clearance >=4u, bhop delay >=0.08s.
 Every tool request has an action ID. action_history and inspect_action expose retained

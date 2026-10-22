@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import mmap
 import os
 from pathlib import Path
 import re
@@ -289,21 +290,31 @@ def compile_map(
                     f"{key} exceeded the build timeout",
                     {"build_dir": str(build), "log": str(log), "stages": results},
                 ) from exc
-        with log.open("rb") as stream:
-            output = stream.read(1024 * 1024).decode("utf-8", errors="replace")
-        leaked = staged.with_suffix(".lin").exists() or bool(
-            re.search(r"(?i)\*+\s*leaked\s*\*+", output)
-        )
-        fatal = bool(
-            re.search(r"(?im)^\s*(?:error:|fatal error|error!|vbsp: error)", output)
-        )
+        log_bytes = log.stat().st_size
+        leaked = staged.with_suffix(".lin").exists()
+        fatal = False
+        output_tail = ""
+        if log_bytes:
+            # Search the complete log without copying it into a Python string.
+            # Errors beyond the former 1 MiB read limit must still fail the build.
+            with (
+                log.open("rb") as stream,
+                mmap.mmap(stream.fileno(), 0, access=mmap.ACCESS_READ) as output,
+            ):
+                leaked |= bool(re.search(rb"(?i)\*+\s*leaked\s*\*+", output))
+                fatal = bool(
+                    re.search(
+                        rb"(?im)^\s*(?:error:|fatal error|error!|vbsp: error)", output
+                    )
+                )
+                output_tail = output[-6000:].decode("utf-8", errors="replace")
         result = {
             "stage": key,
             "command": args,
             "returncode": returncode,
             "log": str(log),
             "leaked": leaked,
-            "log_truncated": log.stat().st_size > 1024 * 1024,
+            "log_truncated": log_bytes > 6000,
         }
         results.append(result)
         if returncode or leaked or fatal:
@@ -312,7 +323,7 @@ def compile_map(
                 {
                     "build_dir": str(build),
                     "stages": results,
-                    "output_tail": output[-6000:],
+                    "output_tail": output_tail,
                 },
             )
         if not bsp.is_file():
@@ -320,14 +331,14 @@ def compile_map(
                 f"{key} did not produce a BSP",
                 {"build_dir": str(build), "stages": results},
             )
-    bsp_info(bsp)
+    info = bsp_info(bsp)
     if pack_assets:
         from .delivery import pack_assets as pack
 
         assets = pack(bsp, game)
+        info = bsp_info(bsp)
     else:
         assets = {"complete": False, "status": "not_checked", "unresolved": None}
-    info = bsp_info(bsp)
     nav = bsp.with_suffix(".nav")
     if not nav.exists():
         source_nav = project.confined(source.with_suffix(".nav"))
