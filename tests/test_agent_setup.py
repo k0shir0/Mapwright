@@ -3,12 +3,14 @@
 import importlib.util
 import json
 from pathlib import Path
+import shutil
 import sys
 import tempfile
 import tomllib
 import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
+from urllib.parse import quote, unquote
 
 SCRIPT = Path(__file__).resolve().parents[1] / "scripts/setup_agent.py"
 RUNS = SCRIPT.parents[1] / ".local/test-runs"
@@ -369,14 +371,14 @@ trust_level = "trusted"
         for guide in setup.GUIDES:
             self.assertTrue((skills / "mapwright/references" / guide).is_file())
         setup_text = (skills / "mapwright-setup/SKILL.md").read_text()
-        self.assertIn(str(SCRIPT).replace("\\", "/"), setup_text)
+        self.assertIn(quote(SCRIPT.as_posix(), safe="/:"), setup_text)
         import re
 
         for markdown in skills.rglob("*.md"):
             for link in re.findall(r"\]\(([^)]+)\)", markdown.read_text("utf-8")):
                 if "://" not in link and not link.startswith("#"):
                     self.assertTrue(
-                        (markdown.parent / link.split("#")[0]).exists(),
+                        (markdown.parent / unquote(link.split("#")[0])).exists(),
                         (markdown, link),
                     )
         self.assertEqual(
@@ -388,6 +390,43 @@ trust_level = "trusted"
             ),
             None,
         )
+
+    @unittest.skipUnless(
+        importlib.util.find_spec("yaml"), "Install the dev extra for skill YAML lint"
+    )
+    def test_installed_skills_are_valid_from_nontrivial_checkout_paths(self):
+        import re
+        import yaml
+
+        checkout = self.root / "checkout with spaces (#1) café"
+        for name in ("skills", "docs", "scripts"):
+            shutil.copytree(setup.CHECKOUT / name, checkout / name)
+        shutil.copy2(
+            setup.CHECKOUT / "mapwright.example.json",
+            checkout / "mapwright.example.json",
+        )
+        skills = self.home / "portable skills"
+        setup.apply_changes(
+            setup.skill_changes(skills, checkout, self.command, self.workspace),
+            self.workspace,
+        )
+        for skill in skills.glob("*/SKILL.md"):
+            with self.subTest(skill=skill.parent.name):
+                metadata = yaml.safe_load(skill.read_text("utf-8").split("---", 2)[1])
+                self.assertEqual(metadata["name"], skill.parent.name)
+                self.assertIsInstance(metadata["description"], str)
+        setup_text = (skills / "mapwright-setup/SKILL.md").read_text("utf-8")
+        script = checkout / "scripts/setup_agent.py"
+        destination = quote(script.as_posix(), safe="/:")
+        self.assertIn(f"[setup_agent.py]({destination})", setup_text)
+        for markdown in skills.rglob("*.md"):
+            for link in re.findall(r"\]\(([^)]+)\)", markdown.read_text("utf-8")):
+                if "://" not in link and not link.startswith("#"):
+                    self.assertNotRegex(link, r"\s|[()]")
+                    self.assertTrue(
+                        (markdown.parent / unquote(link.split("#")[0])).exists(),
+                        (markdown, link),
+                    )
 
     def test_unmanaged_skill_and_wrong_checkout_are_preserved(self):
         skills = self.home / "skills"

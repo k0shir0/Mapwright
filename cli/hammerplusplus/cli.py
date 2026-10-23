@@ -404,8 +404,9 @@ def main(argv=None):
     compact = False
     check_failed = False
     command = None
+    namespace = argparse.Namespace()
     try:
-        args = vars(parser().parse_args(argv))
+        args = vars(parser().parse_args(argv, namespace=namespace))
         compact = args.pop("json")
         response_mode = args.pop("response_mode", None)
         workspace, config_name, command = (
@@ -476,6 +477,10 @@ def main(argv=None):
                 and action != "kz_test_plan"
             ) and not data.get("valid", True)
     except (ValueError, OSError, TypeError, KeyError, TimeoutError) as exc:
+        # argparse sets the selected subcommand before validating its arguments.
+        # Preserve that selection when parsing fails so MCP diagnostics never
+        # enter the JSON-RPC output stream.
+        command = command or getattr(namespace, "command", None)
         result = {"ok": False, "error": str(exc)}
         if isinstance(exc, BackendError):
             result["details"] = exc.details
