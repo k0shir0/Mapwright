@@ -1,6 +1,7 @@
 ---
 name: mapwright
-description: Author and inspect legacy CS:GO KZ maps: VMF edits, GOKZ audits, jumps, reference copying, recovery and Hammer++ through CLI or MCP.
+description: >-
+  Author and inspect legacy CS:GO KZ maps: VMF edits, GOKZ audits, jumps, reference copying, recovery and Hammer++ through CLI or MCP.
 compatibility: Python 3.11+ and an installed Mapwright checkout. Offline VMF tools work cross-platform; native Hammer++ and rendering require Windows and owned legacy CS:GO content.
 ---
 
