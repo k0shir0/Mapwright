@@ -175,7 +175,7 @@ class ProtocolTests(unittest.TestCase):
                         "hammer://guide/kz", {str(r.uri) for r in resources.resources}
                     )
                     guidance = await client.read_resource("hammer://guide/kz")
-                    self.assertIn(">=16u", guidance.contents[0].text)
+                    self.assertIn("timer_profile=buttons", guidance.contents[0].text)
                     templates = await client.list_resource_templates()
                     self.assertTrue(templates.resourceTemplates)
                     prompts = await client.list_prompts()

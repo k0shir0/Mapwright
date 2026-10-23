@@ -1,7 +1,12 @@
 """Create and edit a demo using only the installed CLI. No SDK required."""
 
-import json
+import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from scripts._support import run
+
+import json
 import shutil
 import subprocess
 import tempfile
@@ -10,7 +15,7 @@ import tempfile
 def main():
     cli = shutil.which("mapwright")
     if not cli:
-        raise SystemExit(
+        raise ValueError(
             "Install the package and put its Scripts/bin directory on PATH"
         )
     workspace = Path(tempfile.mkdtemp(prefix="mapwright-demo-")).resolve()
@@ -21,6 +26,7 @@ def main():
             capture_output=True,
             text=True,
             check=True,
+            timeout=30,
         )
         result = json.loads(completed.stdout)
         if not result["ok"]:
@@ -51,19 +57,14 @@ def main():
     )
     inspected = call("inspect", "agent_room.vmf")
     validation = call("validate", "agent_room.vmf")
-    print(
-        json.dumps(
-            {
-                "workspace": str(workspace),
-                "map": str(workspace / "agent_room.vmf"),
-                "revision": edited["revision"],
-                "counts": inspected["counts"],
-                "validation": validation,
-            },
-            indent=2,
-        )
-    )
+    return {
+        "workspace": str(workspace),
+        "map": str(workspace / "agent_room.vmf"),
+        "revision": edited["revision"],
+        "counts": inspected["counts"],
+        "validation": validation,
+    }
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(run(main))

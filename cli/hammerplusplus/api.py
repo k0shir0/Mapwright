@@ -1,6 +1,9 @@
 """One discoverable command contract shared by the CLI and MCP transport."""
 
 import jsonschema
+from copy import deepcopy
+
+from .fields import FIELD_HELP
 
 from . import backend, catalog
 from .project import Project
@@ -30,6 +33,10 @@ KIND = {
 
 
 def schema(properties: dict, required: list[str]) -> dict:
+    properties = deepcopy(properties)
+    for key, field in properties.items():
+        if key in FIELD_HELP:
+            field.setdefault("description", FIELD_HELP[key])
     return {
         "type": "object",
         "properties": properties,
@@ -530,9 +537,14 @@ TOOLS.update(
             [],
         ),
         "read_artifact": spec(
-            "Read a confined bridge artifact as bounded bytes/text or base64. Offsets are bytes; snapshots expose exact prior VMF source.",
+            "Read artifact bytes, or select a top-level field from an immutable result JSON. Byte offsets by default; field offsets count entries/characters. Follow next_offset.",
             {
                 "path": STRING,
+                "field": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Top-level result field; only checksummed .hammer-agent/results JSON supports selection.",
+                },
                 "offset": {"type": "integer", "minimum": 0},
                 "limit": {"type": "integer", "minimum": 1, "maximum": 1000000},
             },
@@ -637,6 +649,102 @@ for name, tool in TOOLS.items():
     }
 
 
+TOOL_GROUPS = ("mapping", "kz", "native", "reference", "recovery")
+
+
+def tool_group(name):
+    if name.startswith("kz_"):
+        return "kz"
+    if name in {
+        "import_reference_map",
+        "search_reference_map",
+        "copy_reference_objects",
+    }:
+        return "reference"
+    if name in {
+        "doctor",
+        "compile_map",
+        "package_map",
+        "open_editor",
+        "save_editor",
+        "close_editor",
+        "inspect_editor",
+        "editor_action",
+        "capture_editor",
+        "rea_probe",
+    }:
+        return "native"
+    if name in {
+        "map_history",
+        "undo_map",
+        "redo_map",
+        "timeline_status",
+        "action_history",
+        "inspect_action",
+        "checkout_action",
+        "operation_log",
+        "list_artifacts",
+        "read_artifact",
+        "create_checkpoint",
+        "inspect_checkpoint",
+        "restore_checkpoint",
+        "resume_recovery",
+        "lock_status",
+        "recover_lock",
+        "restore_map_file",
+    }:
+        return "recovery"
+    return "mapping"
+
+
+# Explicit per-tool units and overloaded names take precedence over common help.
+for name, fields in {
+    "read_map_source": {
+        "offset": "Zero-based character offset",
+        "limit": "Maximum source characters; default 8000",
+    },
+    "read_artifact": {
+        "offset": "Zero-based byte offset, or entries/characters with field",
+        "limit": "Maximum bytes, or entries/characters with field; default 8000, field pages capped at 1000",
+    },
+    "checkout_action": {"target": "Finalized action ID to restore"},
+    "rea_probe": {"target": "Configured executable to inspect with REA"},
+    "import_reference_map": {
+        "source": "Absolute external VMF/BSP path, or a path relative to the workspace"
+    },
+    "map_replace_source": {"source": "Complete inspected VMF source text"},
+}.items():
+    for key, description in fields.items():
+        TOOLS[name]["inputSchema"]["properties"][key]["description"] = description
+
+
+def discover(tool=None, group=None, index=False):
+    if tool is not None and tool not in TOOLS:
+        raise MapError(
+            f"Unknown tool: {str(tool)[:80]}",
+            {"code": "UNKNOWN_TOOL", "hint": "Run mapwright --json schema --index."},
+        )
+    if group is not None and group not in TOOL_GROUPS:
+        raise MapError(
+            f"Unknown tool group: {group}",
+            {"code": "INVALID_ARGUMENT", "hint": "Choose " + ", ".join(TOOL_GROUPS)},
+        )
+    selected = {
+        name: spec
+        for name, spec in TOOLS.items()
+        if (tool is None or name == tool)
+        and (group is None or tool_group(name) == group)
+    }
+    if tool is not None and not selected:
+        raise MapError(f"{tool} belongs to group {tool_group(tool)}, not {group}")
+    if index:
+        return {
+            name: {"group": tool_group(name), "description": spec["description"]}
+            for name, spec in selected.items()
+        }
+    return selected
+
+
 def validate_arguments(action: str, args: dict):
     import json
 
@@ -645,19 +753,68 @@ def validate_arguments(action: str, args: dict):
     except (TypeError, ValueError) as exc:
         raise MapError("Tool arguments must contain finite JSON values") from exc
     if action not in TOOLS:
-        raise MapError(f"Unknown tool: {action}")
+        discover(tool=action)
     try:
         jsonschema.Draft202012Validator(TOOLS[action]["inputSchema"]).validate(args)
     except jsonschema.ValidationError as exc:
-        # jsonschema includes repr(instance) in many messages (including source
-        # replacements and entire oneOf batches). Keep failures useful and bounded.
-        reason = exc.message
-        if len(reason) > 320:
-            reason = f"{exc.validator} constraint failed; inspect this tool's schema"
-        location = str(list(exc.absolute_path))
-        if len(location) > 160:
-            location = location[:157] + "..."
-        raise MapError(f"Invalid {action} argument at {location}: {reason}") from exc
+        # Select the operation branch before explaining a union failure. Never echo
+        # arbitrary payloads (source bodies and user keys can be very large).
+        if exc.validator == "oneOf" and isinstance(exc.instance, dict):
+            op = exc.instance.get("op")
+            branch = next(
+                (
+                    s
+                    for s in exc.schema["oneOf"]
+                    if s.get("properties", {}).get("op", {}).get("const") == op
+                ),
+                None,
+            )
+            if branch is not None:
+                nested = next(
+                    jsonschema.Draft202012Validator(branch).iter_errors(exc.instance),
+                    None,
+                )
+                if nested is not None:
+                    path = [*exc.absolute_path, *nested.absolute_path]
+                    exc = nested
+                else:
+                    path = list(exc.absolute_path)
+            else:
+                path = [*exc.absolute_path, "op"]
+        else:
+            path = list(exc.absolute_path)
+        if exc.validator == "required":
+            missing = next(k for k in exc.validator_value if k not in exc.instance)
+            path.append(missing)
+            reason = "is required"
+        elif exc.validator == "type":
+            reason = "must have type " + str(exc.validator_value)
+        elif exc.validator == "oneOf":
+            reason = (
+                "must name a supported edit operation; inspect the selected tool schema"
+            )
+        else:
+            reason = (
+                exc.message
+                if len(exc.message) <= 200
+                else f"fails {exc.validator} constraint"
+            )
+        location = (
+            "".join(
+                f"[{p}]" if isinstance(p, int) else ("." if i else "") + str(p)[:60]
+                for i, p in enumerate(path)
+            )[:160]
+            or "arguments"
+        )
+        raise MapError(
+            f"Invalid {action} argument: {location} {reason}",
+            {
+                "code": "INVALID_ARGUMENT",
+                "field": location,
+                "schema_tool": action,
+                "hint": f"Run mapwright --json schema --tool {action}.",
+            },
+        ) from exc
 
 
 def _execute(project: Project, config: dict, action: str, args: dict) -> dict:

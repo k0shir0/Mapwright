@@ -10,6 +10,7 @@ from .api import TOOLS, execute
 from . import __version__
 from .backend import BackendError
 from .project import Project
+from .errors import failure as error_result
 
 
 def serve(project: Project, config: dict):
@@ -42,15 +43,9 @@ def serve(project: Project, config: dict):
         "mapwright",
         version=__version__,
         instructions=(
-            "Mapwright is a KZ-first legacy CS:GO Source 1 bridge. Start with doctor and inspect_map; kz_audit and kz_test_plan explain KZ findings. "
-            "IDs have separate namespaces: supply kind when ambiguous. Pass the exact current revision to writes; dry_run previews. "
-            "Use flat map_* tools for single edits, edit_map for atomic batches; only replace_source replaces untouched source. "
-            "KZ behavior depends on exact climb_* names and GOKZ plugin settings. kz-room supplies main timer zones/course start. "
-            "This workflow delivers matching BSP/NAV files and embedded dependencies; empty NAVs prove presence only. package_map verifies the archive; runtime rendering, SKZ movement and replay behavior need separate evidence. "
-            "Every tool request has a permanent action receipt; use timeline_status, action_history, inspect_action and checkout_action for saved-state recovery with retained future history. "
-            "open_editor owns a private Windows desktop and staged map. Use inspected semantic controls, then save_editor with the source revision; close_editor releases its process tree. "
-            "Native actions expose checkpointed/document_reversible; check them and inspect resulting state. capture_editor auto uses native viewport readback on verified renderer DLLs, with explicit UI-only fallback; viewport requires GPU capture and window captures UI chrome. Compile fresh and test the intended GOKZ mode in-game. "
-            "Static checks cannot prove movement feasibility; unsupported geometry is reported. Read hammer://guide/kz for the workflow."
+            "Mapwright is a KZ-first legacy CS:GO Source 1 bridge. Read hammer://guide/kz for task routing. "
+            "Inspect current revisions before writes; dry_run previews. Check data.valid/complete as well as ok. "
+            "Large results retain immutable evidence; read selected fields with read_artifact."
         ),
     )
 
@@ -213,9 +208,7 @@ def serve(project: Project, config: dict):
                 raise failure
             result = {"ok": True, "data": data}
         except (ValueError, OSError, TypeError, KeyError, TimeoutError) as exc:
-            result = {"ok": False, "error": str(exc)}
-            if isinstance(exc, BackendError):
-                result["details"] = exc.details
+            result = error_result(exc)
         content = [
             TextContent(
                 type="text",
@@ -251,45 +244,23 @@ def serve(project: Project, config: dict):
     anyio.run(run)
 
 
-KZ_GUIDE = """Read doctor and inspect_map. New KZ maps can use create_map template=kz-room.
-Source/artifact pages default to 8000 characters/bytes. Large results carry
-response.truncated, totals and an immutable result artifact; read every evidence
-page or request response_mode=full. Preserve valid/complete and unsupported counts.
-Pin expected_revision across source pages and expected_history_revision across
-map_history pages. Never replace a map using incomplete source.
-Inspect exact object IDs/kinds and the current revision. Use map_* tools for a single
-edit or edit_map for atomic batches, with expected_revision and optional dry_run.
-set_properties null removes a key; add_entity properties cannot be null.
-For ladders/water use add_box face_materials (top/bottom/north/south/east/west).
-Run validate_map and kz_audit; a successful check returns ok=true even with findings.
-Inspect data.valid, findings, complete and unsupported_geometry. Use kz_measure_jumps
-on solids/top faces, ordered kz_check_bhop routes, and corridor headhitter checks.
-Check every light origin/emitting surface clears walls, props and fixture housings.
-Inspect every visible block from reachable views for missing/reversed faces, missing
-materials or exposed nodraw; ordinary boxes need six faces. Verify lighting/surfaces
-in a fresh compiled render; unsupported geometry needs manual inspection.
-KZ names are a plugin API: preserve climb_* names; enable button flags 1+32, trigger
-Clients=1, anti-bhop thickness >=16u, destination floor clearance >=4u, bhop delay >=0.08s.
-Every tool request has an action ID. action_history and inspect_action expose retained
-attempts/results and before/after saved-file states; checkout_action restores a chosen
-action with expected_head from timeline_status, retaining future actions for redo.
-open_editor launches a staged copy on an owned private Windows desktop. Inspect menus
-and controls, use semantic editor_action messages, and check document_reversible.
-save_editor commits staged bytes with the source map's expected_revision. close_editor
-releases the owned session. Native UI undo/camera state is separate from saved VMF state.
-capture_editor method=viewport requires actual render-thread pixels; method=window
-captures UI chrome. auto reports fallback explicitly. Uniform frames carry warnings;
-inspect the image and camera/map state before claiming visible geometry.
-Named checkpoints are also available for explicit file/folder snapshots.
-inspect_checkpoint lists every current revision needed for restore_checkpoint;
-restoration keeps a reverse checkpoint and resumable recovery receipt. Never overwrite
-external changes. operation_log, list_artifacts and read_artifact expose evidence.
-Import references to new VMFs, inspect actual selections, then copy with both revisions.
-Compile with asset packing enabled for a fresh BSP and matching NAV; empty NAVs
-prove presence only. package_map verifies archive contents and build hashes.
-Use kz_audit timer_profile=buttons for physical +use timers; profile spawn capacity.
-Inspect stage logs and real editor captures, then use kz_test_plan
-on the intended GOKZ mode/server. Process launch, structural validity and box geometry
-do not prove rendering, movement feasibility or playability. Unusual geometry needs
-manual/editor inspection. GOKZ zones are named Hammer entities, not an in-game zone editor.
+KZ_GUIDE = """Mapwright edits VMF source and compiles BSP maps with matching NAV files for legacy
+CS:GO. Offline VMF operations are portable; native Hammer++ needs Windows.
+Inspection: inspect_map returns revision and typed IDs; use focused object pages.
+Editing: use map_* for one edit or edit_map for an atomic batch; preview dry_run,
+then write with expected_revision. Preserve unrelated source. Replacement needs
+all source pages pinned to the same revision.
+KZ rules: kz_audit returns exact required names, flags and geometry findings;
+use timer_profile=buttons for physical +use timers. Read the installed mapping
+skill's KZ contract for authoring details. kz_test_plan selects runtime checks.
+Native work: doctor first; compile fresh, package dependencies, inspect captures.
+open_editor stages a private document; inspect state, save_editor to commit,
+close_editor to release it. Saved-file recovery excludes unsaved editor memory.
+Recovery: inspect_action/action_history retain attempts; inspect evidence before
+undo, checkpoint restore or checkout_action with expected_head.
+Results: ok means execution succeeded; inspect valid, complete and unsupported
+geometry before claims. Read relevant omitted fields via read_artifact field=NAME;
+follow next_offset. Full bytes remain available for exact reconstruction.
+Report source, packaging, rendering and gameplay evidence separately. Use the
+requested acceptance scope; an editor capture cannot prove in-game behavior.
 """

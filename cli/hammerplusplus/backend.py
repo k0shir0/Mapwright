@@ -19,8 +19,14 @@ from .vmf import MapError, validate
 
 class BackendError(MapError):
     def __init__(self, message: str, details: dict | None = None):
-        super().__init__(message)
-        self.details = details or {}
+        super().__init__(
+            message,
+            {
+                "code": "OPERATION_FAILED",
+                "hint": "Inspect action evidence; run doctor for native prerequisites.",
+                **(details or {}),
+            },
+        )
 
 
 def load_config(project: Project, name: str = "mapwright.local.json") -> dict:

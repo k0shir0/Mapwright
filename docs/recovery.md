@@ -4,24 +4,12 @@ State lives in the workspace's ignored `.hammer-agent/` directory.
 
 ## Problem log
 
-When a mapping, tool or runtime failure affects delivery or prevents a check,
-record it while investigating in an ignored `.local/<task>/problems.md` (or the
-task's existing research log). Link it from the completion report. Preserve the
-original failing artifact/hash and existing research; add resolutions without
-rewriting historical observations as if they had already passed.
-
-Each distinct issue needs:
-
-- Preconditions: map/build hashes, executable/plugin versions and relevant setup.
-- Reproduction: exact tool arguments or minimal steps, with secrets redacted.
-- Observation: exact error or measured behavior, expected result, action ID/log/capture.
-- Diagnosis: confirmed facts separated from hypotheses and unrelated environment failures.
-- Resolution: fix or workaround, changed files and any remaining side effects.
-- Verification: the check actually run, artifact identity, outcome and remaining limits.
-
-Mark attempted-only, inconclusive and unverified checks explicitly. Tool action
-history supplies evidence; it does not replace this explanation. For delivery
-claims, use the [verification scope](kz-mapping.md#verification-scope).
+When a failure affects delivery, keep a concise issue record in the ignored task
+workspace: failing action/build ID, observed versus expected behavior, confirmed
+diagnosis, resolution, and verification limits. Link existing action receipts,
+logs and captures instead of copying them into another research document. Preserve
+original evidence and label hypotheses, inconclusive checks and unverified claims.
+Use the [verification scope](kz-mapping.md#verification-scope) for delivery claims.
 
 ## Permanent action timeline
 
@@ -36,7 +24,10 @@ Results larger than 32 KiB of compact ASCII JSON return an explicit
 `response.truncated` summary, collection totals and a checksummed immutable JSON
 artifact under `.hammer-agent/results/`. Status, revision, validity, completeness
 and recovery identifiers remain available. Findings/warnings may be previews:
-inspect `response.omitted_fields` and read **all** `read_artifact` byte pages to
+inspect `response.omitted_fields` and use `read_artifact` with `field=NAME`
+(or CLI `artifact PATH --field NAME --limit 20`) to read needed fields. Field
+offsets count entries/characters; follow `next_offset` and `next_call`. Read all
+relevant findings before verification claims. Byte pages remain available to
 recover the exact full result. Evidence artifacts are ASCII JSON, so byte pages
 concatenate without splitting UTF-8 characters. Existing arbitrary binary artifacts
 still use base64 when a page is not UTF-8. CLI `--response-mode full` or MCP

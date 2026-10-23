@@ -1,6 +1,7 @@
 ---
 name: mapwright-setup
 description: Install/repair local Mapwright MCP and skills for Codex, Claude Code, OpenCode, Antigravity, pi or Hermes; scoped rollback.
+compatibility: Python 3.11+ and a retained Mapwright checkout. Native readiness requires Windows with a logged-in graphics session and owned legacy CS:GO content.
 ---
 
 # Set up Mapwright
@@ -12,6 +13,9 @@ does not require another user confirmation. Read
 
 1. Locate the checkout and writable workspace. An installed skill's adjacent
    `installation.json` records `checkout`, `workspace`, `setup_script` and command.
+   Validate those paths with the [resolver](../mapwright/scripts/resolve_installation.py);
+   stale paths require setup from the current checkout. All `scripts/` commands
+   below are relative to that checkout, not the map workspace or skill directory.
    Entrypoint: [setup_agent.py](../../scripts/setup_agent.py); inspect `--help` once.
    Resolve/reuse Python 3.11+ with working `venv`/`pip` (64-bit on Windows);
    provision missing Python per [this guide](../../docs/setup.md#python-provisioning).
@@ -24,8 +28,8 @@ does not require another user confirmation. Read
    Preview resolved `--client`, `--workspace`, scope and native disposition, then
    rerun with `--yes`. Setup installs editable extras in an isolated checkout venv,
    repairs package inheritance, runs `pip check`, registers stdio MCP and bundles
-   both skills/guides. Inspect failures; ordinary mapping needs no activation,
-   global packages, Node or REA.
+   both skills and their linked task guides. Inspect failures; ordinary mapping
+   needs no activation, global packages, Node or REA.
 3. Inspect receipt/`doctor`. Native discovery prefers workspace config, checkout
    config, then owned local/Steam legacy CS:GO. Missing runtime permits offline
    VMF/MCP: report its limit. Use `--native required` for requested native readiness.

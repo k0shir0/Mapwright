@@ -113,19 +113,6 @@ decompiler is required for Mapwright's VMF tools, Source compilers, or MCP.
 Hermes setup can install pinned PyYAML into the local environment for its
 configuration merge; this is an installer dependency.
 
-### Optional REA research lane
-
-`rea-probe` and the opt-in `test_mcp_e2e.py` native research scenario additionally
-need REA. The agent provisions this only when that lane is requested: install
-a Node version accepted by the pinned REA package's `engines.node`, resolve
-`rea-agents@6.7.0` into `.local/rea-runtime` with `npm install --package-lock-only
---ignore-scripts --prefix .local/rea-runtime rea-agents@6.7.0`, run
-`npm audit --prefix .local/rea-runtime`, review the result, then install with
-`npm ci --prefix .local/rea-runtime`. Configure `rea` to the resolved
-`.local/rea-runtime/node_modules/rea-agents/scripts/rea.mjs` and verify
-`rea-probe hammer`. Ghidra is unnecessary for this PE resource probe.
-Use the linked upstream REA installation guide for additional reverse
-engineering features; these are separate from mapping setup.
 
 Set the editor's GameData to the complete merged FGD when using the installer.
 `doctor` checks prerequisites. Confirm native behavior with a fresh compile

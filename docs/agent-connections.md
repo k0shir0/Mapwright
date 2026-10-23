@@ -55,8 +55,9 @@ installs skills for both App/IDE (`~/.gemini/config/skills`) and CLI
 `%LOCALAPPDATA%/hermes`; Linux/macOS/WSL defaults to `~/.hermes`.
 
 Installed skills contain `installation.json` with the concrete executable,
-workspace and checkout. The mapping skill bundles its KZ, reference copying
-and recovery guides, so relative links resolve outside this repository.
+workspace and checkout. The mapping skill owns the KZ, copying, recovery and native guides; the setup
+skill owns this client guide and links to the sibling mapping skill. Install both.
+Their resolver checks machine paths before use; guide links resolve outside this repository.
 Rerunning setup is idempotent and updates managed files.
 
 Recreate the environment and rerun setup after cloning or relocating a checkout.
@@ -126,7 +127,7 @@ not extend every client's hard deadline. Completed checks return findings in
 
 Any terminal-capable agent can use the installed CLI from the skill's
 `installation.json`, even if an old client lacks MCP or cannot reload it.
-Run `schema` for tool fields and `COMMAND --help` for flags. Read
+Run `schema --index` then `schema --tool TOOL` for tool fields and `COMMAND --help` for flags. Read
 [recovery](recovery.md) for operation logs, checkpoints and artifacts.
 
 ## Missing tools or startup failures

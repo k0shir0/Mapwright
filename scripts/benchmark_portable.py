@@ -1,11 +1,14 @@
 """Measure portable synthetic workloads; accepts an optional checkout to compare."""
 
-import argparse
-import json
+import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from scripts._support import JsonArgumentParser, run
+
+import json
 import sqlite3
 import statistics
-import sys
 import tempfile
 import time
 import tracemalloc
@@ -26,7 +29,7 @@ def timed(fn, count=3):
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = JsonArgumentParser(description=__doc__)
     parser.add_argument(
         "--source",
         type=Path,
@@ -34,7 +37,13 @@ def main():
         help="Checkout whose code to measure",
     )
     args = parser.parse_args()
-    sys.path.insert(0, str(args.source.resolve()))
+    source = args.source.resolve()
+    sys.path.insert(0, str(source))
+    if source != Path(__file__).resolve().parents[1]:
+        # Support imports the local error formatter; benchmark the selected code.
+        for module in list(sys.modules):
+            if module == "cli" or module.startswith("cli."):
+                del sys.modules[module]
     from cli.hammerplusplus import api, timeline, workspace, vmf, delivery, reference
     from cli.hammerplusplus.project import Project, digest
 
@@ -189,8 +198,8 @@ def main():
                 previous = action
         cost, value = timed(lambda: ledger.state(previous, ["p050.txt"]))
         out["selected_path_100000_versions"] = {**cost, "result": value}
-    print(json.dumps(out, indent=2))
+    return out
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(run(main))

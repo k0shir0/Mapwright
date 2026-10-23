@@ -924,8 +924,10 @@ def _run(project, config, tool, arguments, callback, mutating, validate):
             action.fail(exc)
         from .results import bounded, serialized, MAX_RESULT_BYTES
 
+        from .errors import error_details
+
         details = {
-            **getattr(exc, "details", {}),
+            **error_details(exc),
             "action_id": action.id,
             "head": timeline.head(),
         }

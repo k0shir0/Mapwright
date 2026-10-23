@@ -1,26 +1,28 @@
 """Verify KZ authoring/measurement through real MCP and actual Source compilers."""
 
-import argparse
-from datetime import timedelta
-import json
-from pathlib import Path
 import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from scripts._support import JsonArgumentParser, run, verify
+
+from datetime import timedelta
 import struct
 import uuid
 
-import anyio
-from mcp import ClientSession, StdioServerParameters
-from mcp.client.stdio import stdio_client
-
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = JsonArgumentParser(description=__doc__)
     parser.add_argument(
         "--workspace",
         default=".",
         help="Existing workspace with configured legacy CS:GO compilers",
     )
     args = parser.parse_args()
+    from mcp import ClientSession, StdioServerParameters
+    from mcp.client.stdio import stdio_client
+    from cli.hammerplusplus.errors import AgentError
+
     root = Path(args.workspace).resolve(strict=True)
     folder = ".local/kz-verification/" + uuid.uuid4().hex
     path = folder + "/kz_verification.vmf"
@@ -32,7 +34,9 @@ def main():
             args=["-m", "cli.hammerplusplus", "--workspace", str(root), "mcp"],
         )
         async with stdio_client(params) as (read, write):
-            async with ClientSession(read, write) as client:
+            async with ClientSession(
+                read, write, read_timeout_seconds=timedelta(seconds=30)
+            ) as client:
                 await client.initialize()
 
                 async def call(name, values):
@@ -40,7 +44,10 @@ def main():
                         name, values, read_timeout_seconds=timedelta(seconds=240)
                     )
                     if response.isError:
-                        raise RuntimeError(json.dumps(response.structuredContent))
+                        raise AgentError(
+                            response.structuredContent["error"],
+                            response.structuredContent.get("details"),
+                        )
                     report["steps"].append(name)
                     return response.structuredContent["data"]
 
@@ -157,24 +164,16 @@ def main():
                     test_plan=await call("kz_test_plan", {"path": path}),
                 )
 
-    anyio.run(scenario)
     output = root / folder / "verification.json"
-    output.write_text(json.dumps(report, indent=2), encoding="utf-8")
-    print(
-        json.dumps(
-            {
-                "ok": True,
-                "receipt": str(output),
-                "vmf": str(root / path),
-                "bsp": report["compile"]["bsp"]["path"],
-                "gap": report["measurement"]["gap"],
-                "verification": "Actual MCP authoring/audit/measurement and Source compilation; editor rendering and in-game behavior require separate verification.",
-            },
-            indent=2,
-        )
-    )
-    return 0
+    verify(scenario, report, output)
+    return {
+        "receipt": str(output),
+        "vmf": str(root / path),
+        "bsp": report["compile"]["bsp"]["path"],
+        "gap": report["measurement"]["gap"],
+        "verification": "MCP authoring/audit/measurement and Source compilation; editor rendering and in-game behavior require separate verification.",
+    }
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    raise SystemExit(run(main))

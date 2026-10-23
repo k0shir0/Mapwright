@@ -7,17 +7,21 @@ of the optional REA development tools.
 
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from scripts._support import JsonArgumentParser, emit, report_failure, run
+
 import argparse
 from dataclasses import dataclass
 import hashlib
 import importlib.util
 import json
 import os
-from pathlib import Path
 import re
 import shutil
 import subprocess
-import sys
 import tempfile
 import tomllib
 import uuid
@@ -29,8 +33,8 @@ GUIDES = (
     "reference-maps.md",
     "recovery.md",
     "setup.md",
-    "agent-connections.md",
 )
+SKILL_GUIDES = {"mapwright": GUIDES, "mapwright-setup": ("agent-connections.md",)}
 
 
 def sha(data):
@@ -357,7 +361,10 @@ def apply_changes(changes, workspace):
                 raise ValueError(
                     f"Configuration changed during installation: {change.path}"
                 )
-            atomic(change.path, change.after)
+            if change.after is None:
+                change.path.unlink()
+            else:
+                atomic(change.path, change.after)
             applied.append(change)
         manifest["status"] = "applied"
     except BaseException:
@@ -569,7 +576,18 @@ def skill_changes(root, checkout, command, workspace):
         ) != str(checkout):
             raise ValueError(f"Skill belongs to another checkout: {dest}")
         text = (checkout / "skills" / name / "SKILL.md").read_text("utf-8")
-        text = text.replace("../../docs/", "references/")
+        for guide in (*GUIDES, "agent-connections.md"):
+            owner = (
+                name
+                if guide in SKILL_GUIDES[name]
+                else ("mapwright" if guide in GUIDES else "mapwright-setup")
+            )
+            target = (
+                f"references/{guide}"
+                if owner == name
+                else f"../{owner}/references/{guide}"
+            )
+            text = text.replace(f"../../docs/{guide}", target)
         text = text.replace(
             "../../scripts/setup_agent.py",
             str(checkout / "scripts/setup_agent.py").replace("\\", "/"),
@@ -577,9 +595,19 @@ def skill_changes(root, checkout, command, workspace):
         files = {
             dest / "SKILL.md": text.encode(),
             marker: (json.dumps(metadata, indent=2) + "\n").encode(),
+            dest
+            / "scripts/resolve_installation.py": (
+                checkout / "skills/mapwright/scripts/resolve_installation.py"
+            ).read_bytes(),
         }
-        for guide in GUIDES:
+        for guide in SKILL_GUIDES[name]:
             contents = (checkout / "docs" / guide).read_text("utf-8")
+            for other in (*GUIDES, "agent-connections.md"):
+                if other not in SKILL_GUIDES[name]:
+                    owner = "mapwright" if other in GUIDES else "mapwright-setup"
+                    contents = contents.replace(
+                        f"]({other}", f"](../../{owner}/references/{other}"
+                    )
             contents = contents.replace(
                 "../skills/mapwright-setup/SKILL.md", "../../mapwright-setup/SKILL.md"
             )
@@ -588,6 +616,23 @@ def skill_changes(root, checkout, command, workspace):
                     relative, (checkout / relative[3:]).as_posix()
                 )
             files[dest / "references" / guide] = contents.encode()
+        for guide in (*GUIDES, "agent-connections.md"):
+            old = dest / "references" / guide
+            if guide not in SKILL_GUIDES[name] and marker.exists() and old.is_file():
+                previous = (checkout / "docs" / guide).read_text("utf-8")
+                previous = previous.replace(
+                    "../skills/mapwright-setup/SKILL.md",
+                    "../../mapwright-setup/SKILL.md",
+                )
+                for relative in (
+                    "../scripts/setup_local.py",
+                    "../mapwright.example.json",
+                ):
+                    previous = previous.replace(
+                        relative, (checkout / relative[3:]).as_posix()
+                    )
+                if read(old) == previous.encode():
+                    changes.append(Change(old, read(old), None))
         for path, data in files.items():
             changes.append(Change(path, read(path), data))
     return changes
@@ -803,6 +848,8 @@ def bootstrap(checkout, apply=False, hermes=False):
             subprocess.run(
                 [sys.executable, "-I", "-m", "venv", str(checkout / ".venv")],
                 check=True,
+                timeout=120,
+                stdout=sys.stderr,
             )
         elif not cfg.is_file():
             raise ValueError(
@@ -830,6 +877,7 @@ def bootstrap(checkout, apply=False, hermes=False):
                 + ("import yaml" if hermes else ""),
             ],
             capture_output=True,
+            timeout=30,
         )
         stamp = checkout / ".local/agent-setup/runtime.json"
         fingerprint = sha((checkout / "pyproject.toml").read_bytes())
@@ -855,9 +903,13 @@ def bootstrap(checkout, apply=False, hermes=False):
                 ],
                 check=True,
                 stdout=sys.stderr,
+                timeout=600,
             )
         subprocess.run(
-            [str(python), "-I", "-m", "pip", "check"], check=True, stdout=sys.stderr
+            [str(python), "-I", "-m", "pip", "check"],
+            check=True,
+            stdout=sys.stderr,
+            timeout=60,
         )
         atomic(stamp, json.dumps({"pyproject_sha256": fingerprint}).encode())
     return python, command
@@ -895,7 +947,7 @@ asyncio.run(check())
 
 
 def parser():
-    result = argparse.ArgumentParser(
+    result = JsonArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
     result.add_argument(
@@ -949,9 +1001,9 @@ def parser():
 
 
 def main(argv=None):
-    args = parser().parse_args(argv)
     result = None
     try:
+        args = parser().parse_args(argv)
         if args.rollback:
             result = rollback(args.rollback.resolve(), args.yes)
         else:
@@ -1078,6 +1130,7 @@ def main(argv=None):
                         ],
                         check=True,
                         stdout=sys.stderr,
+                        timeout=1800,
                     )
                     target = workspace / "mapwright.local.json"
                     changes.append(
@@ -1106,7 +1159,7 @@ def main(argv=None):
                         raise ValueError(
                             "Native prerequisites are incomplete: " + ", ".join(missing)
                         )
-        print(json.dumps({"ok": True, "data": result}, indent=2))
+        emit({"ok": True, "data": result})
         return 0
     except (
         ValueError,
@@ -1114,12 +1167,8 @@ def main(argv=None):
         subprocess.SubprocessError,
         tomllib.TOMLDecodeError,
     ) as exc:
-        failure = {"ok": False, "error": str(exc)}
-        if result is not None:
-            failure["details"] = result
-        print(json.dumps(failure))
-        return 1
+        return report_failure(exc, result)
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(run(main))
