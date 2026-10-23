@@ -137,6 +137,7 @@ class CLITests(unittest.TestCase):
         for args in (
             ["--workspace", str(self.root / "missing"), "mcp"],
             ["--workspace", str(self.root), "--config", config.name, "mcp"],
+            ["--workspace", str(self.root), "mcp", "--unknown-option"],
         ):
             with self.subTest(args=args):
                 result = subprocess.run(

@@ -21,6 +21,7 @@ import sys
 import tempfile
 import tomllib
 import uuid
+from urllib.parse import quote
 
 CHECKOUT = Path(__file__).resolve().parents[1]
 CLIENTS = ("codex", "claude", "opencode", "antigravity", "pi", "hermes")
@@ -572,7 +573,7 @@ def skill_changes(root, checkout, command, workspace):
         text = text.replace("../../docs/", "references/")
         text = text.replace(
             "../../scripts/setup_agent.py",
-            str(checkout / "scripts/setup_agent.py").replace("\\", "/"),
+            quote((checkout / "scripts/setup_agent.py").as_posix(), safe="/:"),
         )
         files = {
             dest / "SKILL.md": text.encode(),
@@ -585,7 +586,7 @@ def skill_changes(root, checkout, command, workspace):
             )
             for relative in ("../scripts/setup_local.py", "../mapwright.example.json"):
                 contents = contents.replace(
-                    relative, (checkout / relative[3:]).as_posix()
+                    relative, quote((checkout / relative[3:]).as_posix(), safe="/:")
                 )
             files[dest / "references" / guide] = contents.encode()
         for path, data in files.items():

@@ -1,6 +1,7 @@
 ---
 name: mapwright
-description: Author/inspect legacy CS:GO KZ maps via CLI/MCP: VMF edits, GOKZ audits, jumps, reference copying, recovery and Hammer++.
+description: >-
+  Author/inspect legacy CS:GO KZ maps via CLI/MCP: VMF edits, GOKZ audits, jumps, reference copying, recovery and Hammer++.
 ---
 
 # Mapwright
