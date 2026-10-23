@@ -6,13 +6,17 @@ resolve paths, install the local Python environment, register the server,
 install both skills with bundled guides, and verify stdio MCP. No hand-written
 configuration or manually copied skill links are needed.
 
-From the checkout, this applies project setup for Codex in a separate workspace:
+From the checkout, the universal installer detects installed clients and uses
+a separate map workspace:
 
-```powershell
-python scripts/setup_agent.py --client codex --workspace ../Mapwright-workspace --yes
+```sh
+python scripts/setup_agent.py --workspace ../Mapwright-workspace --yes
 ```
 
-Other client IDs are `claude`, `opencode`, `antigravity`, `pi`, and `hermes`.
+An agent selects its current/requested client explicitly, for example
+`python scripts/setup_agent.py --client codex --workspace ../Mapwright-workspace`.
+Check that preview, then repeat
+with `--yes`. Other client IDs are `claude`, `opencode`, `antigravity`, `pi`, and `hermes`.
 Hermes uses an active profile rather than a project MCP file:
 
 ```powershell
@@ -27,12 +31,25 @@ environment profile overrides. `--workspace` selects the map workspace and
 project configuration root; prefer a location outside the checkout. Omitting
 `--workspace` uses the checkout. `--help` describes every flag.
 
+If Python is absent, an available `uv` can provision it and run the same script:
+`uv run --no-project --python 3.13 scripts/setup_agent.py --workspace ../Mapwright-workspace --yes`.
+With neither installed, follow [Python provisioning](setup.md#python-provisioning).
+These commands work in PowerShell and POSIX shells; no activation is needed.
+
 Setup writes the absolute installed executable and workspace. Transport is
 local stdio; no account, hosted endpoint, Node, or REA is required
 by Mapwright at runtime. See [native setup](setup.md) for the separate owned
 legacy CS:GO requirement.
 
 ## Configuration and portable skills
+
+Before applying, preserve valid existing settings unchanged. If the preview
+would replace an existing MCP entry, choose a distinct `--name` unless repair
+of that entry was explicitly requested. Use a fresh workspace/checkout when
+existing native config, skills or tool directories conflict. Do not overwrite
+unknown files, edit Steam games/branches, or alter launchers to make setup pass.
+The [native checklist](setup.md#native-prerequisite-checks) handles absent or
+undiscovered Hammer/SDK installations without doing so.
 
 The installer merges the named server while preserving unrelated servers,
 settings, trust and permissions. JSONC comments and unrelated source text

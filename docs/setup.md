@@ -2,7 +2,9 @@
 
 Use [automatic agent setup](agent-connections.md) to install the local Python
 environment, persistent MCP registration and mapping skills. The agent runs
-`setup_agent.py` for the requested client and resolves all real paths itself.
+`setup_agent.py` for the requested client, checks missing prerequisites and
+resolves real paths itself. Keep the existing installers; agent guidance fills
+the gaps before and after them.
 Hammer++ needs compatible legacy CS:GO engine DLLs and `csgo/gameinfo.txt`;
 CS2 files cannot replace them. Use Hammer++ CS:GO build 8864.
 
@@ -19,11 +21,11 @@ machine rather than copying a previous machine's configuration or environment.
 
 | Requirement | Provisioning and verification |
 | --- | --- |
-| Checkout | Clone this repository, including `scripts/`, `skills/` and `docs/`. Git is needed to clone and develop, not to run an existing checkout. |
+| Checkout | Reuse the checkout or clone this repository, including `scripts/`, `skills/` and `docs/`. If Git is absent, retrieve the repository's source archive through authorized GitHub access. Git is not needed to run an extracted checkout. |
 | Python 3.11+ with `venv` and `pip` | The agent resolves or installs Python as directed by the setup skill. Use 64-bit Python on Windows. Setup creates an isolated `.venv`, repairs system-package inheritance and runs `pip check`. Activation and global packages are unnecessary. |
 | Python packages | Setup installs the declared `[mcp,source,desktop]` extras from `pyproject.toml`; pip installs transitive dependencies and build-time setuptools. Hermes additionally installs setup-only PyYAML. |
 | Network | First install needs the configured Python package index and, for native tools, the pinned GitHub releases/raw file in `setup_local.py`. Allow their download redirects. Preserve TLS verification; report proxy, certificate or policy failures explicitly. Cached reruns need no new downloads when dependencies are already satisfied. |
-| Legacy CS:GO runtime/content | Native authoring requires an owned, entitled Source 1 installation with `bin` engine DLLs, `csgo/gameinfo.txt`, and stock `csgo/pak01_dir.vpk` plus its VPK chunks. The agent discovers Steam libraries or accepts `--runtime`. It cannot supply Steam credentials or entitlement. Restore the entitled legacy game/SDK through Steam if absent; an SDK installation should be initialized once as directed by Hammer++'s bundled README. |
+| Legacy CS:GO runtime/content | Native authoring requires owned Source 1 `bin` engine DLLs, `csgo/gameinfo.txt`, and stock `csgo/pak01_dir.vpk` plus its VPK chunks. Follow the native prerequisite checks below for discovery or a separate download; do not change an existing Steam game/branch. Steam credentials and entitlement cannot be supplied by the repo. |
 | Native tools and assets | Setup downloads hash-verified Hammer++ 8864, Tools++, HammerAddons, GOKZ FGD and BSPSource with bundled Java. It generates editor settings, content mounts and workspace config. No separate Java, Node, REA, Ghidra or Visual Studio installation is needed for ordinary mapping. |
 | Windows graphics session | Native editing needs a logged-in Windows desktop session with access to `WinSta0`, usable Direct3D 9 and permission to start owned processes/private desktops. A service, session 0, headless container or WSL terminal does not establish this support. Run native verification in the actual agent session. VMF/MCP tools work on Linux/macOS without an editor. |
 | Client and workspace | Use the installed client's supported version and an existing writable map workspace. Setup writes only the selected registration/skills and local artifacts. Client trust/approval stays client-controlled; the agent uses the installed CLI immediately when the current chat cannot reload MCP. |
@@ -36,9 +38,27 @@ offline setup is not a claim of native readiness.
 
 ### Python provisioning
 
-Resolve and verify Python 3.11+ with `python`, `py -3`, or an available `uv`
-managed interpreter. Reuse a working installation. If Windows has none, provision
-64-bit per-user Python with the installed WinGet client:
+Resolve and verify Python 3.11+ with `python`, `python3`, `py -3`, or an available
+`uv` managed interpreter. Reuse a working installation; resolve its absolute
+executable rather than assuming PATH or a Windows Store alias works. With `uv`,
+run the existing installer from the checkout even when Python is absent:
+
+```sh
+uv run --no-project --python 3.13 scripts/setup_agent.py
+```
+
+Append the usual `--client`, `--workspace` and other setup flags, inspect the
+preview, then repeat with `--yes`. `--no-project` leaves package bootstrapping
+to `setup_agent.py`; [uv provisions Python](https://docs.astral.sh/uv/guides/scripts/#using-different-python-versions)
+when needed. If neither Python nor uv exists, get the matching official
+[standalone uv release archive](https://docs.astral.sh/uv/getting-started/installation/#github-releases)
+and its published checksum, extract into a new checkout-local `.local/bootstrap`
+directory and invoke its absolute executable. No shell profile, PATH edit,
+global Python replacement or downloaded installer script is required. Use
+command-scoped `UV_PYTHON_INSTALL_DIR` and `UV_CACHE_DIR` under that directory
+when all bootstrap files must stay local; preserve existing proxy/index/TLS
+configuration. On Windows, the alternative, if package-managed installation is
+appropriate, is 64-bit per-user Python with the installed WinGet client:
 
 ```powershell
 winget install --id Python.Python.3.13 --exact --source winget --scope user --silent --accept-package-agreements --accept-source-agreements --disable-interactivity
@@ -59,14 +79,106 @@ skips this; `--native required` reports a missing runtime as a failure. Without
 one, automatic mode still installs offline VMF tools and MCP. It does not
 acquire Steam entitlement or substitute another engine branch.
 
-Setup reports stale configurations and repairs them when an owned runtime is
-available. An explicit `--runtime` requests a new isolated native installation.
-Configuration is replaced, with a rollback backup, only after installation
-succeeds. A partial previous installation is retained; retries choose a fresh
-directory and reuse verified downloads. Malformed configuration is reported
-instead of overwritten: preserve a backup, correct the reported fields, and
-rerun setup. Rollback restores registration, skills and configuration; it
-retains downloaded tools and maps.
+Inspect the preview before applying: the installer can repair stale native
+configuration, and an explicit `--runtime` requests a new native installation
+followed by backed-up configuration replacement. For preservation-only setup,
+reuse valid configuration unchanged or choose a fresh workspace instead of
+triggering replacement. Keep malformed configuration and unknown local files
+intact. A separate checkout also avoids reusing conflicting checkout config,
+skills or `.venv`. Partial native installs are retained; retries choose a fresh
+editor directory and reuse verified downloads. Rollback restores managed
+registration, skills and configuration; it retains downloaded tools and maps.
+
+## Native prerequisite checks
+
+Use this checklist before accepting an automatic `offline` result. No SDK,
+Hammer, Steam, Java or Node is needed for portable VMF/MCP setup. Native work
+requires Windows and compatible legacy CS:GO engine/content; a separate SDK
+installation is unnecessary if those files already exist, because
+`setup_local.py` supplies Hammer++ 8864, Tools++ and the editor definitions.
+
+| Starting state | Agent action using existing setup infrastructure |
+| --- | --- |
+| Valid workspace config and tools | Run `doctor`, reuse settings unchanged, then verify actual compilation/rendering. |
+| Hammer/SDK exists at an unknown location | Discover read-only as below. Verify the files rather than guessing a path or declaring them absent. |
+| Runtime/content exists, no Hammer or SDK | Preview `setup_agent.py --client CLIENT --workspace WORKSPACE --runtime RUNTIME`, then apply with `--yes`. It invokes `setup_local.py` to install isolated native tools. |
+| Hammer exists, runtime/content is missing | Inspect its config/mounts and source runtime first. Hammer alone, an empty generated game directory or a server-only package does not prove complete client content. Obtain only the missing prerequisite separately. |
+| Neither runtime/SDK nor Hammer exists | Provision an isolated entitled legacy runtime below, verify it, then use `--runtime`. Do not stop at offline setup when native setup was requested and provisioning remains possible. |
+| Linux/macOS/WSL, missing entitlement, or unavailable Windows graphics session | Complete `--native off` in a usable workspace; report the precise native blocker and resume point. Do not claim full native readiness. |
+
+**Locate existing tools.** Read workspace and checkout native config, installed
+skill `installation.json`, and `.local/csgo-editor*/installation.json` first.
+For custom Hammer installs, read `hammerplusplus_gameconfig.txt` or
+`GameConfig.txt` to find `GameDir`, compiler paths and content mounts. Do not
+change these files or launch an existing editor to initialize them.
+
+The script's automatic search covers conventional Steam/local locations, not
+every disk. If it misses an install, inspect the Windows Steam registry values
+`HKCU\Software\Valve\Steam` (`SteamPath`) and
+`HKLM\SOFTWARE\WOW6432Node\Valve\Steam` (`InstallPath`) read-only, then each
+discovered `steamapps/libraryfolders.vdf` and app manifests' `installdir`.
+Check both legacy CS:GO and CS:GO SDK locations. Read known shortcuts/process
+executable paths if needed; never edit launchers. Search the resulting install
+roots/user-supplied directories for `hammerplusplus.exe`, `hammer.exe` and
+`gameinfo.txt`; avoid an unbounded whole-drive scan. Ask for a location only
+when this evidence is exhausted. Pass a verified absolute `--runtime` when
+automatic discovery is insufficient.
+
+**Verify a runtime.** Its `bin` directory must contain `tier0.dll`, `vstdlib.dll`,
+`filesystem_stdio.dll`, `materialsystem.dll` and `shaderapidx9.dll`; also require
+`csgo/gameinfo.txt`, `csgo/pak01_dir.vpk` and the referenced VPK chunks. Check
+that it is the Windows legacy Source 1 branch, with 32-bit engine DLLs for
+Hammer++ 8864. Validate catalog/compile use, not just filename presence. CS2,
+Source SDK 2013 and other Hammer++ branches are not substitutes. Renderer
+capture additionally requires the exact [supported DLL profile](#terminal-controlled-editor-sessions).
+
+**Obtain missing runtime/SDK files without modifying installed games.** On
+Windows, use a fresh workspace-local SteamCMD directory and a separate fresh
+`.local/csgo-sdk` download destination. Obtain the Windows archive from the
+[official SteamCMD guide](https://developer.valvesoftware.com/wiki/SteamCMD)
+and extract there, not into the user's Steam directory. Run it from its own
+directory so its bootstrap/cache files stay there. Before login, set
+`force_install_dir` to the absolute new download destination. The interactive
+SteamCMD sequence for an account entitled to the legacy client is:
+
+```text
+force_install_dir "ABSOLUTE_NEW_RUNTIME_DIRECTORY"
+login STEAM_ACCOUNT_NAME
+app_update 730 -beta csgo_legacy validate
+quit
+```
+
+These are SteamCMD console commands, not a new setup script. Have the user
+complete password/Steam Guard prompts in the authentication flow; never put
+secrets in commands, config or receipts. Check current branch availability and
+account access before the large download. Run `validate` only against this new
+owned destination: it overwrites files. Never change the user's Steam beta
+selection, validate/update their installed game, or install a substitute game.
+Do not terminate games or log out an active Steam session to make login work.
+If Steam reports no subscription, a missing branch or authentication failure,
+retain the evidence and report that exact prerequisite rather than promising
+the repo can supply it.
+
+If additional SDK files are actually needed, check access to the
+[CS:GO Authoring Tools / SDK](https://developer.valvesoftware.com/wiki/Counter-Strike:_Global_Offensive/Authoring_Tools)
+(app 745); availability depends on the account. Download into its own fresh
+destination with the same SteamCMD approach (`app_update 745 validate`). Inspect
+Hammer++'s bundled README, but do not follow its in-place copy/SDK-launch steps
+against the user's install. The installer generates its own isolated Hammer
+gameconfig instead. SDK files alone do not establish stock content or
+renderer compatibility. Recheck the runtime checklist and resume the existing
+installer with the verified runtime root; do not concatenate game/SDK folders
+or repair their original settings in place.
+
+Before applying native setup, inspect the destination `.local` directories,
+`assets` and `mapwright.local.json` for conflicts. Use a fresh workspace when
+they contain unknown files. The native installer copies runtime files and
+writes mounts, Hammer gameconfig and INI settings only in its isolated editor
+copy; original runtime/content remain read-only. Keep partial downloads and
+installs; rerun using the previewed fresh destination rather than deleting
+unknown files. After setup, inspect the receipt and `doctor`, then run the
+skill's actual compile/render checks. Paths and successful downloads alone
+are not native verification.
 
 ## Isolated installation
 
@@ -86,7 +198,8 @@ existing game content. It refuses existing install/config targets. Use
 `--help` for alternate locations. Downloads and hashes are pinned in
 [setup_local.py](../scripts/setup_local.py).
 
-Prefer `setup_agent.py` for retries and configuration repair. Direct
+Prefer `setup_agent.py` for retries. Configuration repair must be explicitly
+requested; preservation-only setup uses a fresh workspace as above. Direct
 `setup_local.py` calls require an unused `--install-dir` and `--output-config`.
 
 It includes Hammer++, Tools++ compilers, BSPSource with Java, HammerAddons
@@ -99,7 +212,8 @@ FGD presence alone does not establish engine support.
 Automatic setup reuses an existing working configuration. For custom tools,
 [mapwright.example.json](../mapwright.example.json) describes supported fields;
 the agent resolves actual paths and preserves a valid existing workspace
-configuration. Repair of stale paths follows the backed-up workflow above.
+configuration. Preserve stale settings unless their repair was requested;
+otherwise use a fresh workspace as above.
 Configuration paths resolve against that workspace; the config file must
 remain inside it. Missing configuration permits offline authoring.
 
