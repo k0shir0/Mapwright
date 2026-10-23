@@ -15,7 +15,7 @@ MCP, bundle guides and verify the server. From the checkout, the same installer
 command works on Windows, Linux and macOS with Python 3.11+:
 
 ```sh
-python scripts/setup_agent.py --yes
+python scripts/setup_agent.py --workspace ../Mapwright-workspace --yes
 ```
 
 Clients: Codex, Claude Code, OpenCode, Google Antigravity, pi and Hermes.
@@ -24,7 +24,7 @@ The command detects installed clients; use `--client codex` (or another client
 ID) to select just one. Run without `--yes` to preview resolved paths. An agent
 selects its current/requested client and checks that preview before applying it.
 If Python is missing but `uv` is available, use the same installer through
-`uv run --no-project --python 3.13 scripts/setup_agent.py --yes`.
+`uv run --no-project --python 3.13 scripts/setup_agent.py --workspace ../Mapwright-workspace --yes`.
 If neither is installed, follow [Python provisioning](docs/setup.md#python-provisioning).
 `--help` covers workspace selection and rollback. No shell activation is needed.
 See [agent connections](docs/agent-connections.md).
@@ -33,6 +33,11 @@ Windows native work also needs compatible legacy CS:GO engine/content.
 The [native checklist](docs/setup.md#native-prerequisite-checks) covers missing
 tools and unknown install locations. Setup keeps existing settings, Steam games,
 branches, launchers and editors intact; new native tools live in the workspace.
+
+Keep maps, captures, packages and research outside the checkout, for example in
+the sibling `../Mapwright-workspace`, or under ignored `.local/`. Pass
+`--workspace` explicitly; setup otherwise uses the checkout. Research notes,
+corpus data and investigation reports stay local.
 
 For a package-only development install:
 
@@ -51,13 +56,14 @@ catalogs, `desktop` adds Windows editor control. Configure native tools using
 ## Use
 
 ```powershell
-mapwright new maps/kz_example.vmf --template kz-room
-$map = (mapwright --json inspect maps/kz_example.vmf | ConvertFrom-Json).data
-mapwright edit maps/kz_example.vmf --expect $map.revision --ops '@examples/edit.json' --dry-run
-mapwright edit maps/kz_example.vmf --expect $map.revision --ops '@examples/edit.json'
-mapwright validate maps/kz_example.vmf
-mapwright kz-audit maps/kz_example.vmf
-mapwright kz-test-plan maps/kz_example.vmf
+$workspace = '../Mapwright-workspace'
+mapwright --workspace $workspace new maps/kz_example.vmf --template kz-room
+$map = (mapwright --workspace $workspace --json inspect maps/kz_example.vmf | ConvertFrom-Json).data
+mapwright --workspace $workspace edit maps/kz_example.vmf --expect $map.revision --ops '@examples/edit.json' --dry-run
+mapwright --workspace $workspace edit maps/kz_example.vmf --expect $map.revision --ops '@examples/edit.json'
+mapwright --workspace $workspace validate maps/kz_example.vmf
+mapwright --workspace $workspace kz-audit maps/kz_example.vmf
+mapwright --workspace $workspace kz-test-plan maps/kz_example.vmf
 ```
 
 - Put `--workspace PATH`, `--config FILE`, and `--json` before the command.
@@ -125,3 +131,8 @@ VMF. `editor-save` commits verified bytes to the source with a revision check;
 `editor-close` cleans up the owned session. The permanent action timeline
 supports saved-file recovery. See [setup](docs/setup.md#terminal-controlled-editor-sessions)
 and [recovery](docs/recovery.md) for the boundaries.
+
+## License
+
+Mapwright is licensed under the [MIT License](LICENSE). Downloaded tools and
+game content retain their own licenses.
