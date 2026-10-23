@@ -2,22 +2,25 @@
 
 from __future__ import annotations
 
-import argparse
-import json
-from pathlib import Path
 import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from scripts._support import JsonArgumentParser, run
+
+import json
 import threading
 import time
 import uuid
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from cli.hammerplusplus import backend, desktop, native_session, windows
 from cli.hammerplusplus.project import Project
+from cli.hammerplusplus.errors import AgentError, failure
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = JsonArgumentParser(description=__doc__)
     parser.add_argument(
         "--run",
         action="store_true",
@@ -146,6 +149,7 @@ def main():
                 handle.Close()
     except Exception as exc:
         report["error"] = str(exc)
+        report["failure"] = failure(exc)
     finally:
         if opened:
             try:
@@ -154,41 +158,42 @@ def main():
                 report["cleanup_error"] = str(exc)
         stop.set()
         observer.join(timeout=2)
-        report["desktop_before"] = baseline
-        report["desktop_after"] = desktop_state()
-        report["desktop_samples"] = samples
-        report["observed_input_desktop_unchanged"] = all(
-            s["input_desktop"] == baseline["input_desktop"]
-            for s in [*samples, report["desktop_after"]]
-        )
-        report["observed_foreground_unchanged"] = all(
-            s["foreground"] == baseline["foreground"]
-            for s in [*samples, report["desktop_after"]]
-        )
-        report["observed_cursor_unchanged"] = all(
-            s["cursor"] == baseline["cursor"]
-            for s in [*samples, report["desktop_after"]]
-        )
+        try:
+            report["desktop_before"] = baseline
+            report["desktop_after"] = desktop_state()
+            report["desktop_samples"] = samples
+            report["observed_input_desktop_unchanged"] = all(
+                s["input_desktop"] == baseline["input_desktop"]
+                for s in [*samples, report["desktop_after"]]
+            )
+            report["observed_foreground_unchanged"] = all(
+                s["foreground"] == baseline["foreground"]
+                for s in [*samples, report["desktop_after"]]
+            )
+            report["observed_cursor_unchanged"] = all(
+                s["cursor"] == baseline["cursor"]
+                for s in [*samples, report["desktop_after"]]
+            )
+        except Exception as exc:
+            report["cleanup_error"] = str(exc)
         output = folder / "report.json"
         output.write_text(json.dumps(report, indent=2, default=str), encoding="utf-8")
-    print(
-        json.dumps(
+    if "error" in report or "cleanup_error" in report:
+        raise AgentError(
+            report.get("error", report.get("cleanup_error")),
             {
-                "report": str(output),
-                "status": (
-                    "failed"
-                    if "error" in report or "cleanup_error" in report
-                    else "complete"
-                ),
-                "viewport_rendering_verified": False,
-                "native_gpu_readback_verified": report.get("capture", {}).get("method")
-                == "native-viewport",
+                **report.get("failure", {}).get("details", {}),
+                "receipt": str(output),
             },
-            indent=2,
         )
-    )
-    return 1 if "error" in report or "cleanup_error" in report else 0
+    return {
+        "receipt": str(output),
+        "status": "complete",
+        "viewport_rendering_verified": False,
+        "native_gpu_readback_verified": report.get("capture", {}).get("method")
+        == "native-viewport",
+    }
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(run(main))

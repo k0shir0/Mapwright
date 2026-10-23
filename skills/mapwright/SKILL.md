@@ -1,77 +1,56 @@
 ---
 name: mapwright
 description: >-
-  Author/inspect legacy CS:GO KZ maps via CLI/MCP: VMF edits, GOKZ audits, jumps, reference copying, recovery and Hammer++.
+  Author and inspect legacy CS:GO KZ maps: VMF edits, GOKZ audits, jumps, reference copying, recovery and Hammer++ through CLI or MCP.
+compatibility: Python 3.11+ and an installed Mapwright checkout. Offline VMF tools work cross-platform; native Hammer++ and rendering require Windows and owned legacy CS:GO content.
 ---
 
 # Mapwright
 
-Adjacent `installation.json` identifies the absolute executable, workspace and
-checkout. Otherwise use `.venv/Scripts/mapwright.exe` (Windows) or
-`.venv/bin/mapwright`. Put `--workspace PATH` before CLI commands. Discover flags
-with `COMMAND --help`, fields with `schema`/tools/list, prerequisites with `doctor`.
-Missing installation: follow `mapwright-setup`. Check the running schema; edits
-in another checkout do not update the installed executable or running server.
+Mapwright edits VMF source maps and produces compiled BSP maps with matching NAV
+files. KZ is movement-course mapping; GOKZ is the server plugin whose exact entity
+names and settings define timer behavior. CS2 and CSS are unsupported.
 
-Establish timer/movement mode, player/replay capacity and acceptance scope from
-the brief/config. Read guides only as needed: [KZ](../../docs/kz-mapping.md),
-[references](../../docs/reference-maps.md), [recovery](../../docs/recovery.md),
-[native setup](../../docs/setup.md).
+Resolve installed paths with this skill's [resolver](scripts/resolve_installation.py),
+using any Python 3.11+ interpreter. It reads adjacent `installation.json` and reports
+stale paths. Keep the checkout; after relocation rerun setup from its new location.
+In an uninstalled checkout use `.venv/Scripts/mapwright.exe` (Windows) or
+`.venv/bin/mapwright`, relative to the **checkout root**. Missing executable:
+follow [setup](../mapwright-setup/SKILL.md). No shell activation is required.
 
-1. Inspect revision and typed IDs; qualify reused IDs with `kind`. Use small pages
-   (`limit=20` objects, `limit=8000` source/artifacts); follow `next_offset`.
-   Check `response.truncated` and read its immutable evidence artifact; `response_mode=full`
-   returns full detail. Pin `expected_revision` across source pages.
-   `object` exposes properties, outputs, sides/source. New KZ map:
-   `new PATH --template kz-room`. Resolve fields/materials with `entities`/`assets`;
-   preserve exact GOKZ names from the KZ contract.
-2. Preview `dry_run`, then write with the same revision; re-inspect on conflict.
-   Flat `map_*` tools handle one edit; `edit_map` batches atomically. Room bounds
-   are interior, box bounds exterior. Unsupported features require inspected,
-   explicit revision-checked `replace_source`: fetch **all** source pages and
-   preserve unrelated blocks. Import references into a new VMF, identify actual
-   objects, then copy typed IDs with both revisions. Inspect mappings, links,
-   dependencies/conflicts and mounts per the reference guide.
-3. Run `validate`, `kz-audit`, focused checks and `kz-test-plan`. Inspect `valid`,
-   `complete`, findings and `unsupported_geometry` even after success. Check hull
-   clearance/support at spawns, seams, turns and recovery points; box checks leave
-   other collision unverified.
-4. Check **every light**: origin, emitting face and aperture must clear other solid
-   objects, including walls, ceilings, props and fixture housings. Move embedded
-   lights into clear space; verify illumination after compilation. Inspect
-   **every visible block** from all reachable viewpoints for missing/reversed
-   faces, missing materials and exposed nodraw/invisible sides. Restore surfaces
-   that make a block look incomplete; ordinary boxes need six oriented faces.
-   Keep intentional concealed/tool faces. Inspect unsupported shapes/props in
-   Hammer and in-game; structural validation alone cannot prove appearance.
-5. Run `doctor` before native work; compile fresh and inspect stage logs.
-   `open_editor` owns a private desktop/staged VMF. Inspect process/document,
-   dialogs and enabled semantic controls before acting. Dispatch is not a commit:
-   inspect state and `checkpointed`/`document_reversible`. `save_editor` verifies
-   staging and commits against the source revision; re-inspect before file edits.
-   `close_editor` releases owned helpers. `capture_editor method=viewport` requires
-   GPU pixels; `window` is UI-only; `auto` reports fallback. Inspect image, uniform
-   warnings and camera/map state before claiming visible geometry.
-6. Compile with packing; embed custom materials, sky and props and resolve missing
-   dependencies (editor mounts do not travel). `package_map` verifies matching
-   BSP/NAV hashes/archive; empty NAVs prove presence only. Physical timers use
-   `timer_profile=buttons`; set server spawn capacity. Follow the
-   [verification scope](../../docs/kz-mapping.md#verification-scope): geometry/
-   appearance work needs geometry checks, verified packaging and one successful
-   in-game render check. Identify the tested build; report rendering, movement,
-   gameplay and replay evidence separately. Expand testing for defects/broader
-   requests; stop when the agreed checks pass.
+Use the resolved executable and put `--workspace PATH --json` before CLI commands.
+Map/output paths are workspace-relative; `@request.json` is process-CWD-relative.
+Use `schema --index`, then `schema --tool TOOL` (or `--group mapping|kz|native|reference|recovery`)
+for fields; use `COMMAND --help` for CLI flags. The running server's schema is
+binding; another checkout's edits do not update a running server.
 
-Results are `{ok:true,data:...}` or `{ok:false,error:...,details?:...}`; MCP
-`isError` marks execution failure. Allow compile progress/timeouts; inspect native
-state before retrying timed-out mutations. Log delivery-affecting failures with
-preserved artifacts, reproduction, fix and limits in the
-[problem log](../../docs/recovery.md#problem-log).
+Choose the branch matching the request; load only its linked guides:
 
-Inspect recovery evidence first. Undo with the recorded revision or restore an
-inspected checkpoint. `timeline_status`, `action_history`, `inspect_action` expose
-permanent attempts; `checkout_action` restores finalized managed saved files with
-current `expected_head`, retaining future history. Inspect preserved external edits
-before retrying refusals. Saved-file recovery excludes unsaved GUI memory/undo;
-use inspected native Edit/Undo and verify staging for editor-only work. Preserve
-unrelated VMF blocks when recovering a change.
+| Task | Workflow |
+| --- | --- |
+| Inspect | `inspect` / `inspect_map` for revision, counts and typed IDs; `object` / `inspect_object` for details. Use `limit=20` and follow `next_offset`. Stop when the requested information is established. |
+| Create or edit | `new PATH --template kz-room`; resolve entities/materials with `entities`/`assets`. Preview `dry_run`, then write with the same `expected_revision`; re-inspect conflicts. Use flat `map_*` for one edit, `edit_map` for an atomic batch. Read [KZ rules and geometry](../../docs/kz-mapping.md). |
+| Copy a reference | Import into a new VMF, inspect actual objects, then copy typed IDs with both source/destination revisions. Review mappings, links, dependencies, conflicts and mounts using the [copying guide](../../docs/reference-maps.md). |
+| Compile, editor or delivery | Run `doctor`, then follow [native sessions](../../docs/setup.md#terminal-controlled-editor-sessions) and [verification scope](../../docs/kz-mapping.md#verification-scope). Compile fresh with packing, inspect stage logs and verify `package_map`. |
+| Recover | Inspect evidence first; use [recovery](../../docs/recovery.md) to select map undo, checkpoints, saved-file timeline checkout or native UI undo. Preserve unrelated blocks and external edits. |
+
+For edits, qualify reused IDs with `kind`. Room bounds are interior; box bounds
+are exterior. Unsupported authoring features require explicit revision-checked
+`replace_source`: retrieve **all** source pages using the same `expected_revision`
+and preserve unrelated blocks. Source/artifact byte pages default to 8000.
+
+After edits run `validate`, `kz-audit` and the focused checks relevant to the change.
+Inspect `valid`, `complete`, findings and `unsupported_geometry`; execution success
+alone does not establish validity. Apply the KZ guide's lighting/surface checks
+and agreed acceptance scope. Establish timer/movement mode and player/replay
+capacity from the brief/config; physical timers use `timer_profile=buttons`.
+Report geometry, packaging, rendering, movement and replay evidence separately,
+with the tested build. Empty NAVs prove presence only. Stop when agreed checks pass.
+
+Results use `{ok:true,data:...}` or `{ok:false,error:...,details:...}`; MCP `isError`
+marks execution failure. Errors include a code and recovery hint. If
+`response.truncated`, inspect totals/omitted fields and use `read_artifact` with
+`field=NAME` for needed detail, following `next_offset`. Read all relevant findings
+before verification claims; raw byte pages or `response_mode=full` reconstruct the
+full result. Inspect native state before retrying timed-out mutations.
+Record delivery-affecting failures in the [problem log](../../docs/recovery.md#problem-log).

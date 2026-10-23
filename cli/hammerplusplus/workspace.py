@@ -207,8 +207,12 @@ def artifacts(project, category="", offset=0, limit=100):
     }
 
 
-def read_artifact(project, path, offset=0, limit=8000):
+def read_artifact(project, path, offset=0, limit=8000, field=None):
     source = artifact_path(project, path)
+    if field is not None:
+        from .results import read_field
+
+        return read_field(project, source, field, offset, limit)
     # Read bounded bytes, including binary BSPs/PNGs as base64 instead of decoding blindly.
     with source.open("rb") as stream:
         stream.seek(offset)

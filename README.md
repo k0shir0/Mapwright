@@ -68,10 +68,12 @@ mapwright --workspace $workspace kz-test-plan maps/kz_example.vmf
 
 - Put `--workspace PATH`, `--config FILE`, and `--json` before the command.
 - Map/output paths are workspace-relative; `@JSON` files are process-CWD-relative.
-- `mapwright schema` defines tool arguments; `mapwright COMMAND --help` defines CLI flags.
+- `mapwright schema --index` lists tools; `schema --tool TOOL` defines arguments; `mapwright COMMAND --help` defines CLI flags.
 - Single edits use flat commands/tools such as `add-box` / `map_add_box`;
   `edit` / `edit_map` applies atomic batches. Writes require the inspected revision.
-- Results are `{ok:true,data:...}` or `{ok:false,error:...,details?:...}`.
+- Results are `{ok:true,data:...}` or `{ok:false,error:...,details:...}`.
+  Errors include a stable code and recovery hint; `--json` uses compact encoding.
+  `schema --group GROUP` filters tools; plain `schema` retains the full catalog.
   Completed invalid checks retain `ok:true` and return CLI exit 1; inspect
   `data.valid`, findings, `complete`, and `unsupported_geometry`.
 
@@ -105,8 +107,8 @@ With the virtual environment active:
 ```powershell
 $env:MAPWRIGHT_FORCE_INSTALLED = '1'
 python -m pip check
-python -m compileall -q cli scripts tests
-python -m black --check cli scripts tests
+python -m compileall -q cli scripts skills tests
+python -m black --check cli scripts skills tests
 python -m unittest discover -s tests -v
 python scripts/demo.py
 # Configured native compilers required:
@@ -118,6 +120,11 @@ python scripts/verify_native_session.py --run
 ```
 
 CI checks and formatter version: [.github/workflows/checks.yml](.github/workflows/checks.yml).
+Verification/setup scripts emit one compact JSON result and retain diagnostic
+tracebacks under the workspace's ignored `.local/script-errors/`. Use `--debug`
+to also show the traceback on stderr. Verification receipts retain partial failures;
+MCP checks and installer subprocesses have explicit deadlines.
+
 Structural checks and compilation do not prove rendering or playability.
 Follow the [verification scope](docs/kz-mapping.md#verification-scope) for map
 delivery; geometry and appearance checks do not require a full-course playthrough.

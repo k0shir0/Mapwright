@@ -1,16 +1,19 @@
 """Opt-in actual backend test. Missing SDK tools fail, never skip or simulate."""
 
-import argparse
-import json
 import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from scripts._support import JsonArgumentParser, report_failure, run
+
 import uuid
 
-from cli.hammerplusplus.backend import BackendError, compile_map, load_config
+from cli.hammerplusplus.backend import compile_map, load_config
 from cli.hammerplusplus.project import Project
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = JsonArgumentParser(description=__doc__)
     parser.add_argument(
         "--workspace",
         default=".",
@@ -26,18 +29,12 @@ def main():
     name = f".local/backend-verification/{uuid.uuid4().hex}/agent_room.vmf"
     created = project.create(name, "csgo-room")
     try:
-        result = compile_map(
+        return compile_map(
             project, load_config(project, args.config), name, created["revision"]
         )
     except (ValueError, OSError) as exc:
-        result = {"ok": False, "error": str(exc), "vmf": str(project.map_path(name))}
-        if isinstance(exc, BackendError):
-            result["details"] = exc.details
-        print(json.dumps(result, indent=2))
-        return 1
-    print(json.dumps({"ok": True, "data": result}, indent=2))
-    return 0
+        return report_failure(exc, {"vmf": str(project.map_path(name))})
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    raise SystemExit(run(main))

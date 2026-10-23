@@ -6,69 +6,21 @@ from pathlib import Path
 import shlex
 import sys
 
-from .api import TOOLS, OPERATIONS, KZ_TOOLS, execute
-from .backend import BackendError, load_config
+from .api import TOOLS, OPERATIONS, KZ_TOOLS, TOOL_GROUPS, discover, execute
+from .fields import FIELD_HELP
+from .errors import JsonArgumentParser, emit, failure
+from .backend import load_config
 from .project import Project
 from .vmf import MapError
 
-ARGUMENT_HELP = {
-    "path": "VMF path relative to the configured workspace",
-    "expected_revision": "Current SHA-256 revision from inspect; stale writes are refused",
-    "operations": "Atomic edit operations as a JSON array or @file (process-CWD-relative)",
-    "query": "Case-insensitive text to match; empty matches all entries",
-    "offset": "Zero-based offset for the next page",
-    "limit": "Maximum entries or source characters to return in this page",
-    "token": "Recovery/checkpoint token returned by the corresponding operation",
-    "pid": "Owned Hammer process ID returned by editor-open",
-    "template": "Initial map contents; kz-room includes GOKZ timer zones and spawns",
-    "id": "VMF object ID; supply kind when IDs are reused across namespaces",
-    "kind": "Object namespace or catalog category to inspect",
-    "dry_run": "Preview the result without changing authoring files",
-    "mode": "bsp runs VBSP only; fast/full also run VVIS and HDR VRAD",
-    "timeout": "Total operation deadline in seconds",
-    "output": "New output path inside the workspace; existing files are preserved",
-    "method": "auto tries native GPU readback; viewport requires it; window captures UI chrome",
-    "classname": "Exact entity class to describe, including inherited FGD fields",
-    "target": "Configured native executable to inspect with REA",
-    "after": "Return actions after this stable sequence cursor (zero starts history)",
-    "action_id": "Permanent action ID returned in a result's timeline field",
-    "expected_head": "Current timeline HEAD from timeline-status; prevents stale checkout",
-    "category": "Artifact category to list; empty includes all categories",
-    "paths": "Workspace files or folders to include in the recoverable checkpoint",
-    "label": "Description retained with the checkpoint",
-    "minimum": "Minimum X Y Z coordinates of the spatial search bounds",
-    "maximum": "Maximum X Y Z coordinates of the spatial search bounds",
-    "start": "Starting solid or side selector as JSON or @file",
-    "end": "Landing solid or side selector as JSON or @file",
-    "landing": "Landing solid or top-face selector as JSON or @file",
-    "minimum_mbh": "Server-specific minimum multibhop distance in Source units",
-    "min": "Exterior minimum X Y Z coordinates (room bounds are interior)",
-    "max": "Exterior maximum X Y Z coordinates (room bounds are interior)",
-    "material": "Material name without materials/ prefix or .vmt extension",
-    "face_materials": "JSON object of per-face material overrides or @file",
-    "parent_id": "World/entity ID which will own the new brush",
-    "parent_kind": "Namespace of parent-id; world or entity",
-    "thickness": "Positive room wall thickness in Source units",
-    "origin": "Entity origin X Y Z in Source units",
-    "properties": "JSON keyvalues or @file; null deletes a key in set-properties",
-    "event": "Output event name, such as OnStartTouch",
-    "input": "Input invoked on the output target entity",
-    "parameter": "Optional output input parameter",
-    "delay": "Nonnegative output delay in seconds",
-    "times": "Number of firings; -1 means unlimited",
-    "delta": "Translation X Y Z in Source units with texture lock",
-    "source": "Native VMF source text or @file for replace-source; external file for import-reference",
-    "tool": "Shared MCP tool name to call; schema describes its JSON arguments",
-}
 
-
-class Parser(argparse.ArgumentParser):
+class Parser(JsonArgumentParser):
     def add_argument(self, *args, **kwargs):
         if "help" not in kwargs:
             dest = kwargs.get("dest", args[0].lstrip("-").replace("-", "_"))
             key = {"expect": "expected_revision", "ops": "operations"}.get(dest, dest)
             field = getattr(self, "tool_schema", {}).get("properties", {}).get(key, {})
-            kwargs["help"] = field.get("description") or ARGUMENT_HELP.get(key)
+            kwargs["help"] = field.get("description") or FIELD_HELP.get(key)
             if not kwargs["help"]:
                 kwargs["help"] = key.replace("_", " ").capitalize()
             if "default" in kwargs and kwargs["default"] not in (
@@ -77,9 +29,6 @@ class Parser(argparse.ArgumentParser):
             ):
                 kwargs["help"] += " (default: %(default)s)"
         return super().add_argument(*args, **kwargs)
-
-    def error(self, message):
-        raise MapError(message)
 
 
 COMMANDS = {
@@ -288,6 +237,11 @@ def parser():
         if command == "artifacts":
             sub.add_argument("--category", default="")
     sub = commands.add_parser("artifact")
+    sub.add_argument(
+        "--field",
+        help="Top-level field of an immutable result; offsets count entries/characters",
+        default=argparse.SUPPRESS,
+    )
     sub.add_argument("path")
     sub.add_argument("--offset", type=int, default=0)
     sub.add_argument("--limit", type=int, default=8000)
@@ -381,15 +335,29 @@ def parser():
             if "enum" in field:
                 kwargs["choices"] = field["enum"]
             sub.add_argument("--" + key.replace("_", "-"), **kwargs)
-    commands.add_parser(
-        "schema", help="Discover every tool and the complete edit operation JSON schema"
+    discovery = commands.add_parser(
+        "schema",
+        help="Discover tools; select --tool, --group or --index to focus output",
+    )
+    discovery.add_argument(
+        "--tool", help="Return one complete tool schema (MCP name or CLI command)"
+    )
+    discovery.add_argument(
+        "--group", choices=TOOL_GROUPS, help="Filter to a task group"
+    )
+    discovery.add_argument(
+        "--index",
+        action="store_true",
+        help="Return names, groups and summaries without full schemas",
     )
     commands.add_parser("mcp", help="Run the stdio MCP server, no network listener")
     commands.add_parser("repl", help="Interactive shell using the same CLI commands")
     call = commands.add_parser(
         "call", help="Call a tool directly with a JSON arguments object"
     )
-    call.add_argument("tool", choices=list(TOOLS))
+    call.add_argument(
+        "tool", help="MCP tool name; use schema --index to discover tools"
+    )
     call.add_argument("arguments", help="JSON object or @path-to-json-file")
     return root
 
@@ -414,10 +382,18 @@ def main(argv=None):
             args.pop("config"),
             args.pop("command"),
         )
-        project = Project(workspace)
-        config = load_config(project, config_name)
+        if command != "schema":
+            project = Project(workspace)
+            config = load_config(project, config_name)
         if command == "schema":
-            result = {"ok": True, "data": TOOLS}
+            result = {
+                "ok": True,
+                "data": discover(
+                    tool=COMMANDS.get(args["tool"], args["tool"]),
+                    group=args["group"],
+                    index=args["index"],
+                ),
+            }
         elif command == "mcp":
             from .mcp_server import serve
 
@@ -477,24 +453,17 @@ def main(argv=None):
                 and action != "kz_test_plan"
             ) and not data.get("valid", True)
     except (ValueError, OSError, TypeError, KeyError, TimeoutError) as exc:
-        # argparse sets the selected subcommand before validating its arguments.
-        # Preserve that selection when parsing fails so MCP diagnostics never
-        # enter the JSON-RPC output stream.
+        # Preserve the subcommand on parse failures so MCP stdout stays JSON-RPC.
         command = command or getattr(namespace, "command", None)
-        result = {"ok": False, "error": str(exc)}
-        if isinstance(exc, BackendError):
-            result["details"] = exc.details
+        result = failure(exc)
         if command == "mcp" and isinstance(exc, PermissionError):
             result["hint"] = (
                 "Check the server process's filesystem permissions. A child launched "
                 "from a restricted shell inherits its access limits; use the registered "
                 "MCP server in the intended client context. See docs/agent-connections.md."
             )
-    print(
-        json.dumps(
-            result, indent=None if compact else 2, ensure_ascii=True, allow_nan=False
-        ),
-        file=sys.stderr if command == "mcp" else sys.stdout,
+    emit(
+        result, pretty=not compact, file=sys.stderr if command == "mcp" else sys.stdout
     )
     return 0 if result["ok"] and not check_failed else 1
 

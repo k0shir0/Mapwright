@@ -82,11 +82,18 @@ triggers; Multi resets it too. Manual `climb_bhop_reset` is rarely necessary.
 - `add_box.face_materials` keys: top, bottom, north=+Y, south=-Y, east=+X, west=-X.
   `add_entity` properties are scalar; `set_properties` accepts null for deletion.
 
+Check every light's origin, emitting face and aperture against walls, ceilings,
+props and fixture housings. Move embedded lights into clear space and verify
+illumination in a fresh compiled render. Inspect every visible block from reachable
+views for missing/reversed faces, missing materials and exposed nodraw/invisible
+sides. Ordinary boxes need six oriented faces; retain intentional concealed/tool
+faces. Unsupported shapes and props need Hammer and in-game inspection.
+
 ## Checks
 
 Start with `kz-audit PATH`, then `kz-check-antibhop`, `kz-check-bhop`,
 `kz-check-teleports`, `kz-check-headhitter`, `kz-check-ladders`,
-`kz-check-water`, or `kz-spawn-check`. Use `schema` for MCP names/options.
+`kz-check-water`, or `kz-spawn-check`. Use `schema --group kz --index`, then `schema --tool TOOL` for options.
 Measure solids or top faces with:
 
 ```text

@@ -8,8 +8,10 @@ import math
 import re
 from typing import Any
 
+from .errors import AgentError
 
-class MapError(ValueError):
+
+class MapError(AgentError):
     pass
 
 

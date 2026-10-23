@@ -1,11 +1,15 @@
 """Install an isolated CS:GO Hammer++ toolchain using an owned Source 1 runtime."""
 
-import argparse
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from scripts._support import JsonArgumentParser, run
+
 import hashlib
 import json
 import os
 import re
-from pathlib import Path
 import shutil
 import urllib.request
 import zipfile
@@ -138,7 +142,7 @@ def archive(project, name, folder, prefixes=None):
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = JsonArgumentParser(description=__doc__)
     parser.add_argument(
         "--workspace",
         default=".",
@@ -334,18 +338,12 @@ def main():
         ).encode(),
         exclusive=True,
     )
-    print(
-        json.dumps(
-            {
-                "ok": True,
-                "configuration": str(config_path),
-                "installation": str(install),
-                "verification": "Run scripts/verify_backend.py and inspect_editor/capture_editor. Installation does not prove rendering.",
-            },
-            indent=2,
-        )
-    )
+    return {
+        "configuration": str(config_path),
+        "installation": str(install),
+        "verification": "Run scripts/verify_backend.py and inspect_editor/capture_editor; installation does not prove rendering.",
+    }
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(run(main))

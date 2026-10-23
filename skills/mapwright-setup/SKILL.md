@@ -1,6 +1,7 @@
 ---
 name: mapwright-setup
 description: Check/provision missing Python, legacy CS:GO SDK/runtime and Hammer++; use existing installers for local Mapwright MCP and skills, preserving existing settings.
+compatibility: Python 3.11+ and a retained Mapwright checkout. Native readiness requires Windows with a logged-in graphics session and owned legacy CS:GO content.
 ---
 
 # Set up Mapwright
@@ -24,6 +25,9 @@ Preserve malformed/stale files; backups alone do not authorize overwriting them.
 
 1. Locate the checkout and writable workspace. An installed skill's adjacent
    `installation.json` records `checkout`, `workspace`, `setup_script` and command.
+   Validate those paths with the [resolver](../mapwright/scripts/resolve_installation.py);
+   stale paths require setup from the current checkout. All `scripts/` commands
+   below are relative to that checkout, not the map workspace or skill directory.
    Entrypoint: [setup_agent.py](../../scripts/setup_agent.py); inspect `--help` once.
    Resolve/reuse Python 3.11+ with working `venv`/`pip` (64-bit on Windows);
    provision missing Python per [this guide](../../docs/setup.md#python-provisioning).
@@ -40,8 +44,8 @@ Preserve malformed/stale files; backups alone do not authorize overwriting them.
    native prerequisites in step 3 before applying any native install, then
    rerun the acceptable plan with `--yes`. Setup installs editable extras in
    an isolated checkout venv, repairs package inheritance, runs `pip check`,
-   registers stdio MCP and bundles
-   both skills/guides. Inspect failures; ordinary mapping needs no activation,
+   registers stdio MCP and bundles both skills and their linked task guides.
+   Inspect failures; ordinary mapping needs no activation,
    global packages, Node or REA.
 3. Follow the [native prerequisite checks](../../docs/setup.md#native-prerequisite-checks).
    Check existing config/receipts first, then discover owned Hammer/SDK/runtime
