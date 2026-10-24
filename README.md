@@ -88,6 +88,7 @@ build hashes and the archive's BSP/NAV pair. See [delivery and runtime checks](d
 | Task | Read |
 | --- | --- |
 | Agent mapping workflow | [Mapping skill](skills/mapwright/SKILL.md) |
+| KZ jump purpose, spacing and takeoff regions | [Route-design skill](skills/kz-route-design/SKILL.md) |
 | Install/register MCP and skills | [Setup skill](skills/mapwright-setup/SKILL.md) |
 | GOKZ entities, geometry, and checks | [KZ contract](docs/kz-mapping.md) |
 | Hammer++, compilers, FGD, assets | [Setup](docs/setup.md) |

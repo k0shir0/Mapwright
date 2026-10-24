@@ -372,6 +372,7 @@ trust_level = "trusted"
             self.assertTrue((skills / "mapwright/references" / guide).is_file())
         setup_text = (skills / "mapwright-setup/SKILL.md").read_text()
         self.assertIn(quote(SCRIPT.as_posix(), safe="/:"), setup_text)
+        self.assertTrue((skills / "kz-route-design/SKILL.md").is_file())
         import re
 
         for markdown in skills.rglob("*.md"):

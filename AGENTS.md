@@ -13,6 +13,7 @@ Target: KZ-first legacy CS:GO Source 1 VMF/VBSP and Hammer++.
   regenerate local paths, and verify setup in an isolated Python environment.
   For native work, complete the skill's compile/render checks before claiming readiness.
 - Map authoring: [mapping skill](skills/mapwright/SKILL.md).
+- KZ jump spacing and takeoff regions: [route design](skills/kz-route-design/SKILL.md).
 - KZ behavior/checks: [KZ contract](docs/kz-mapping.md).
 - Backend installation/config: [setup](docs/setup.md).
 - References and recovery: [copying](docs/reference-maps.md), [recovery](docs/recovery.md).
