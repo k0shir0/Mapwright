@@ -35,7 +35,11 @@ GUIDES = (
     "recovery.md",
     "setup.md",
 )
-SKILL_GUIDES = {"mapwright": GUIDES, "mapwright-setup": ("agent-connections.md",)}
+SKILL_GUIDES = {
+    "mapwright": GUIDES,
+    "mapwright-setup": ("agent-connections.md",),
+    "kz-route-design": (),
+}
 
 
 def sha(data):
@@ -561,7 +565,7 @@ def skill_changes(root, checkout, command, workspace):
         "command": str(command),
         "setup_script": str(checkout / "scripts/setup_agent.py"),
     }
-    for name in ("mapwright", "mapwright-setup"):
+    for name in SKILL_GUIDES:
         dest = root / name
         marker = dest / "installation.json"
         if (

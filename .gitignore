@@ -36,9 +36,13 @@ opencode.jsonc
 .pi/mcp.json
 .agents/skills/mapwright/
 .agents/skills/mapwright-setup/
+.agents/skills/kz-route-design/
 .claude/skills/mapwright/
 .claude/skills/mapwright-setup/
+.claude/skills/kz-route-design/
 .opencode/skills/mapwright/
 .opencode/skills/mapwright-setup/
+.opencode/skills/kz-route-design/
 .pi/skills/mapwright/
 .pi/skills/mapwright-setup/
+.pi/skills/kz-route-design/

@@ -24,6 +24,11 @@ Use `schema --index`, then `schema --tool TOOL` (or `--group mapping|kz|native|r
 for fields; use `COMMAND --help` for CLI flags. The running server's schema is
 binding; another checkout's edits do not update a running server.
 
+Before spacing a KZ route, read the [route-design skill](../kz-route-design/SKILL.md).
+Use tier-appropriate long jumps as the ordinary baseline and give shorter jumps
+a concrete technical purpose. Record credible takeoff/landing regions and the
+required player travel separately from physical edge gaps.
+
 Choose the branch matching the request; load only its linked guides:
 
 | Task | Workflow |
